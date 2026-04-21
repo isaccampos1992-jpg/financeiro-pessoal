@@ -2048,13 +2048,6 @@ function delFatura(id){
   renderFaturasHistorico();renderCartoes();showToast('Fatura removida.','info');
 }
 
-// Desafios de cartão
-const DESAFIO_CARTAO_TEMPLATES=[
-  {id:'cartao-zero',nome:'Fatura zero em 30 dias',desc:'Não use o cartão de crédito por um ciclo completo',meta:0,dias:30,icon:'🚫'},
-  {id:'cartao-reduzir',nome:'Reduzir fatura em 30%',desc:'Diminua o valor da próxima fatura em 30% em relação à atual',meta:0,dias:30,icon:'📉'},
-  {id:'cartao-guardar',nome:'Guardar valor da fatura',desc:'Separe o valor da fatura antes do vencimento por 60 dias',meta:0,dias:60,icon:'💰'},
-];
-
 // ── renderAll ──
 function renderCartoesDash(){
   const el=document.getElementById('cartoes-dash');
@@ -2079,6 +2072,7 @@ function renderCartoesDash(){
 }
 
 // ── renderAll ──
+function renderAll(){
   renderMetrics();renderChart();renderFilterCat();renderHistorico();renderOrcamento();renderMetas();renderDesafios();renderTxMetaLink();renderCatConfig();renderCartoesDash();
 }
 
