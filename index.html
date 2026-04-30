@@ -44,6 +44,10 @@ body{font-family:'Inter','DM Sans',sans-serif;background:var(--bg);color:var(--t
 
 /* Sidebar */
 .sidebar{background:var(--surface);border-right:1px solid var(--border);padding:0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:1px 0 0 var(--border);}
+.sidebar-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:8px;}
+.sidebar-nav::-webkit-scrollbar{width:3px;}
+.sidebar-nav::-webkit-scrollbar-track{background:transparent;}
+.sidebar-nav::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
 .logo{padding:18px 20px 16px;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:12px;}
 .logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1e40af,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;box-shadow:0 4px 12px rgba(30,64,175,.3);}
 .logo-text{display:flex;flex-direction:column;}
@@ -444,7 +448,8 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">🌙 Tema escuro</button>
-  <div style="height:6px;"></div>
+  <div class="sidebar-nav">
+  <div style="height:4px;"></div>
   <div class="nav-section">Principal</div>
   <button class="nav-item active" onclick="goTo('dashboard')"><span class="nav-icon">▦</span> Painel</button>
   <button class="nav-item" onclick="goTo('lancar')"><span class="nav-icon">＋</span> Lançar</button>
@@ -461,6 +466,7 @@ textarea{resize:vertical;min-height:60px;}
   <div class="nav-section">Sistema</div>
   <button class="nav-item" onclick="goTo('recorrencia')"><span class="nav-icon">🔄</span> Recorrentes</button>
   <button class="nav-item" onclick="goTo('config')"><span class="nav-icon">⚙</span> Config</button>
+  </div>
   <div class="sidebar-footer">
     <div class="sync-indicator" style="margin-bottom:8px;"><div class="sync-dot" id="syncDot"></div><span id="syncLabel">sincronizado</span></div>
     <button onclick="fazerLogout()" style="background:none;border:none;font-size:11px;color:var(--red-text);cursor:pointer;font-family:'DM Sans',sans-serif;padding:0;">Sair da conta</button>
