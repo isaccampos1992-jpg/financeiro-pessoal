@@ -464,7 +464,6 @@ textarea{resize:vertical;min-height:60px;}
   <div class="nav-section">Inteligência</div>
   <button class="nav-item" onclick="goTo('ia')"><span class="nav-icon">✦</span> Análise IA</button>
   <div class="nav-section">Sistema</div>
-  <button class="nav-item" onclick="goTo('recorrencia')"><span class="nav-icon">🔄</span> Recorrentes</button>
   <button class="nav-item" onclick="goTo('config')"><span class="nav-icon">⚙</span> Config</button>
   </div>
   <div class="sidebar-footer">
@@ -507,7 +506,16 @@ textarea{resize:vertical;min-height:60px;}
 <!-- LANÇAR -->
 <div id="page-lancar" class="page">
   <div class="page-title">Lançar</div>
-  <div class="page-sub">Registre uma nova transação</div>
+  <div class="page-sub">Registre uma nova transação ou gerencie recorrentes</div>
+
+  <!-- Sub-tabs -->
+  <div class="sub-tabs">
+    <button class="sub-tab active" id="ltab-avulso" onclick="setLancarTab('avulso')">＋ Avulso</button>
+    <button class="sub-tab" id="ltab-recorrente" onclick="setLancarTab('recorrente')">🔄 Recorrentes</button>
+  </div>
+
+  <!-- ABA AVULSO -->
+  <div id="lsec-avulso">
   <div class="card">
     <div class="type-toggle">
       <button class="type-btn ar" id="btn-rec" onclick="setType('receita')">+ Receita</button>
@@ -535,7 +543,7 @@ textarea{resize:vertical;min-height:60px;}
       <div class="form-group"><label>Vincular a meta (opcional)</label><select id="tx-meta-link"><option value="">Nenhuma</option></select></div>
     </div>
 
-    <!-- Parcelamento para qualquer forma de pagamento -->
+    <!-- Parcelamento geral -->
     <div id="parcelamento-geral" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <div style="font-size:11.5px;font-weight:700;color:var(--accent);">📅 Parcelamento</div>
@@ -550,13 +558,11 @@ textarea{resize:vertical;min-height:60px;}
           <div class="form-group"><label>Valor por parcela</label><input type="text" id="tx-parcela-val-g" readonly style="background:var(--surface2);color:var(--green);font-weight:700;"></div>
           <div class="form-group"><label>1ª parcela em</label><input type="month" id="tx-parcela-inicio-g"></div>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px;">
-          💡 Cada parcela será lançada automaticamente nos meses corretos como despesa individual.
-        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">💡 Cada parcela será lançada automaticamente nos meses corretos.</div>
       </div>
     </div>
 
-    <!-- Campos extras para cartão de crédito -->
+    <!-- Cartão de crédito -->
     <div id="cartao-fields" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:12px;">
       <div style="font-size:11.5px;font-weight:700;color:var(--accent);margin-bottom:10px;">💳 Dados do cartão de crédito</div>
       <div class="form-row">
@@ -579,6 +585,44 @@ textarea{resize:vertical;min-height:60px;}
 
     <button class="btn btn-dark" onclick="addTx()">Adicionar transação</button>
     <div id="lancar-error" style="font-size:12px;color:var(--red);margin-top:8px;display:none;"></div>
+  </div>
+  </div>
+
+  <!-- ABA RECORRENTES -->
+  <div id="lsec-recorrente" style="display:none;">
+    <div id="recorrentes-list-lancar"></div>
+    <div class="sep"></div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px;">➕ Adicionar lançamento recorrente</div>
+      <div class="form-row">
+        <div class="form-group"><label>Tipo</label>
+          <select id="rec-tipo" onchange="renderRecorrenteCatSelect()">
+            <option value="despesa">− Despesa</option>
+            <option value="receita">+ Receita</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Descrição</label><input type="text" id="rec-desc" placeholder="Ex: Aluguel, Netflix, Salário..."></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Valor (R$)</label><input type="number" id="rec-valor" placeholder="0,00" min="0" step="0.01"></div>
+        <div class="form-group"><label>Categoria</label><select id="rec-cat"><option value="">Selecione...</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Dia do mês</label><input type="number" id="rec-dia" min="1" max="28" placeholder="5"></div>
+        <div class="form-group"><label>Forma de pagamento</label>
+          <select id="rec-pagamento">
+            <option value="">Não informar</option>
+            <option value="pix">💸 Pix</option>
+            <option value="dinheiro">💵 Dinheiro</option>
+            <option value="debito">💳 Débito</option>
+            <option value="credito">💳 Crédito</option>
+            <option value="boleto">🔵 Boleto</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-dark" onclick="addRecorrente()">Salvar recorrente</button>
+      <div id="rec-msg" style="font-size:12px;margin-top:8px;min-height:16px;"></div>
+    </div>
   </div>
 </div>
 
@@ -617,12 +661,47 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <!-- Barra de exportação -->
-  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;">
-    <button class="btn btn-outline btn-sm" onclick="exportarHistoricoCSV()" title="Exportar como planilha">📊 Exportar CSV</button>
-    <button class="btn btn-outline btn-sm" onclick="exportarHistoricoPDF()" title="Exportar como PDF">📄 Exportar PDF</button>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+    <div style="font-size:11.5px;color:var(--text3);" id="h-summary"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('extratoInput').click()" title="Importar extrato do banco">📥 Importar extrato</button>
+      <input type="file" id="extratoInput" accept=".csv,.txt" style="display:none" onchange="importarExtrato(event)">
+      <button class="btn btn-outline btn-sm" onclick="exportarHistoricoCSV()">📊 CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="exportarHistoricoPDF()">📄 PDF</button>
+    </div>
+  </div>
+  <!-- Preview importação -->
+  <div id="imp-preview" style="display:none;margin-bottom:12px;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:600;" id="imp-preview-title"></div>
+        <div style="display:flex;gap:6px;">
+          <select id="imp-banco" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface2);">
+            <option value="nubank">Nubank</option>
+            <option value="inter">Inter</option>
+            <option value="itau">Itaú</option>
+            <option value="bradesco">Bradesco</option>
+            <option value="bb">Banco do Brasil</option>
+            <option value="caixa">Caixa</option>
+            <option value="santander">Santander</option>
+            <option value="generico">Genérico</option>
+          </select>
+          <select id="imp-tipo-padrao" style="font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface2);">
+            <option value="auto">Detectar (+/-)</option>
+            <option value="despesa">Tudo despesa</option>
+            <option value="receita">Tudo receita</option>
+          </select>
+        </div>
+      </div>
+      <div id="imp-preview-lista" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;background:var(--surface2);font-size:11.5px;"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-dark" style="margin-top:0;flex:1;" onclick="confirmarImportacaoExtrato()">✅ Importar transações</button>
+        <button class="btn btn-outline btn-sm" onclick="cancelarImportacaoExtrato()">Cancelar</button>
+      </div>
+      <div id="imp-msg" style="font-size:12px;margin-top:6px;min-height:16px;"></div>
+    </div>
   </div>
   <div class="card" style="padding:0 16px;"><div id="tx-list"></div></div>
-  <div id="h-summary" style="font-size:12px;color:var(--text3);text-align:center;margin-top:8px;"></div>
 </div>
 
 <!-- ORÇAMENTO -->
@@ -919,44 +998,6 @@ textarea{resize:vertical;min-height:60px;}
 </div>
 
 <!-- RECORRENTES -->
-<div id="page-recorrencia" class="page">
-  <div class="page-title">Lançamentos recorrentes</div>
-  <div class="page-sub">Despesas e receitas fixas lançadas automaticamente todo mês</div>
-  <div id="recorrentes-list"></div>
-  <div class="sep"></div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:14px;">Adicionar lançamento recorrente</div>
-    <div class="form-row">
-      <div class="form-group"><label>Tipo</label>
-        <select id="rec-tipo">
-          <option value="despesa">− Despesa</option>
-          <option value="receita">+ Receita</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Descrição</label><input type="text" id="rec-desc" placeholder="Ex: Aluguel, Netflix, Salário..."></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Valor (R$)</label><input type="number" id="rec-valor" placeholder="0,00" min="0" step="0.01"></div>
-      <div class="form-group"><label>Categoria</label><select id="rec-cat"><option value="">Selecione...</option></select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Dia do mês</label><input type="number" id="rec-dia" min="1" max="28" placeholder="5" title="Dia fixo de lançamento todo mês"></div>
-      <div class="form-group"><label>Forma de pagamento</label>
-        <select id="rec-pagamento">
-          <option value="">Não informar</option>
-          <option value="pix">💸 Pix</option>
-          <option value="dinheiro">💵 Dinheiro</option>
-          <option value="debito">💳 Débito</option>
-          <option value="credito">💳 Crédito</option>
-          <option value="boleto">🔵 Boleto</option>
-        </select>
-      </div>
-    </div>
-    <button class="btn btn-dark" onclick="addRecorrente()">Salvar recorrente</button>
-    <div id="rec-msg" style="font-size:12px;margin-top:8px;min-height:16px;"></div>
-  </div>
-</div>
-
 <!-- CONFIG -->
 <div id="page-config" class="page">
   <div class="page-title">Configurações</div>
@@ -995,48 +1036,6 @@ textarea{resize:vertical;min-height:60px;}
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('importInput').click()">Importar JSON</button>
       <input type="file" id="importInput" accept=".json" style="display:none" onchange="importarDados(event)">
     </div>
-  </div>
-
-  <div class="card config-section">
-    <div class="card-title" style="margin-bottom:6px;">📥 Importar extrato bancário</div>
-    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">Importe um extrato CSV do seu banco. O sistema categoriza automaticamente.</div>
-    <div class="form-row" style="margin-bottom:10px;">
-      <div class="form-group">
-        <label>Banco</label>
-        <select id="imp-banco">
-          <option value="nubank">Nubank</option>
-          <option value="inter">Inter</option>
-          <option value="itau">Itaú</option>
-          <option value="bradesco">Bradesco</option>
-          <option value="bb">Banco do Brasil</option>
-          <option value="caixa">Caixa Econômica</option>
-          <option value="santander">Santander</option>
-          <option value="generico">Genérico (Data, Descrição, Valor)</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Tipo padrão</label>
-        <select id="imp-tipo-padrao">
-          <option value="despesa">Despesas</option>
-          <option value="receita">Receitas</option>
-          <option value="auto">Detectar pelo valor (+/-)</option>
-        </select>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('extratoInput').click()">📂 Selecionar arquivo CSV</button>
-      <input type="file" id="extratoInput" accept=".csv,.txt,.ofx" style="display:none" onchange="importarExtrato(event)">
-      <span style="font-size:11px;color:var(--text3);">Suporte: .csv e .txt</span>
-    </div>
-    <div id="imp-preview" style="margin-top:12px;display:none;">
-      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;" id="imp-preview-title"></div>
-      <div id="imp-preview-lista" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:8px;background:var(--surface2);font-size:11.5px;"></div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn btn-dark" style="margin-top:0;flex:1;" onclick="confirmarImportacaoExtrato()">✅ Importar transações</button>
-        <button class="btn btn-outline btn-sm" onclick="cancelarImportacaoExtrato()">Cancelar</button>
-      </div>
-    </div>
-    <div id="imp-msg" style="font-size:12px;margin-top:8px;min-height:16px;"></div>
   </div>
 
   <div class="sep"></div>
@@ -1673,11 +1672,11 @@ function goTo(p){
   document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   document.getElementById('page-'+p).classList.add('active');
-  const map={dashboard:0,lancar:1,historico:2,orcamento:3,planejamento:4,reserva:5,cartoes:6,metas:7,desafios:8,ia:9,recorrencia:10,config:11};
+  const map={dashboard:0,lancar:1,historico:2,orcamento:3,planejamento:4,reserva:5,cartoes:6,metas:7,desafios:8,ia:9,config:10};
   document.querySelectorAll('.nav-item')[map[p]].classList.add('active');
   if(p==='orcamento')renderOrcCatSelect();
   if(p==='cartoes')renderCartoes();
-  if(p==='recorrencia'){renderRecorrenteCatSelect();renderRecorrentes();}
+  if(p==='lancar'){renderRecorrenteCatSelect();renderRecorrentesLancar();}
   if(p==='planejamento')renderPlanejamento();
   if(p==='reserva')calcularReserva();
 }
@@ -2013,10 +2012,10 @@ function renderHistorico(){
   const list=getListaFiltrada();
   const el=document.getElementById('tx-list');
   const sumEl=document.getElementById('h-summary');
-  if(!list.length){el.innerHTML='<div class="empty">Nenhuma transação encontrada.</div>';sumEl.textContent='';return;}
+  if(!list.length){el.innerHTML='<div class="empty">Nenhuma transação encontrada.</div>';if(sumEl)sumEl.textContent='';return;}
   const totalRec=list.filter(t=>t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
   const totalDesp=list.filter(t=>t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
-  sumEl.textContent=`${list.length} transações · Receitas: ${fmt(totalRec)} · Despesas: ${fmt(totalDesp)} · Saldo: ${fmt(totalRec-totalDesp)}`;
+  if(sumEl)sumEl.textContent=`${list.length} transações · +${fmt(totalRec)} / -${fmt(totalDesp)} · Saldo: ${fmt(totalRec-totalDesp)}`;
   const dark=isDark();
   const PAGAMENTO_LABEL={pix:'💸 Pix',dinheiro:'💵 Dinheiro',debito:'💳 Débito',credito:'💳 Crédito'};
   const PAGAMENTO_COR={pix:'b-blue',dinheiro:'b-green',debito:'b-amber',credito:'b-purple'};
@@ -3689,6 +3688,43 @@ function selecionarEmoji(emoji){
   const preview=document.getElementById(emojiTargetId+'-preview');
   if(preview)preview.textContent=emoji;
   fecharModal('modal-emoji');
+}
+
+// ── Lançar tabs ──
+function setLancarTab(tab){
+  ['avulso','recorrente'].forEach(t=>{
+    document.getElementById('lsec-'+t).style.display=t===tab?'block':'none';
+    document.getElementById('ltab-'+t).classList.toggle('active',t===tab);
+  });
+  if(tab==='recorrente'){renderRecorrenteCatSelect();renderRecorrentesLancar();}
+}
+
+function renderRecorrentesLancar(){
+  const el=document.getElementById('recorrentes-list-lancar');
+  if(!el)return;
+  if(!recorrentes.length){
+    el.innerHTML='<div class="empty" style="padding:20px 0;">Nenhum recorrente cadastrado ainda.<br><span style="font-size:12px;">Use o formulário abaixo para adicionar.</span></div>';
+    return;
+  }
+  el.innerHTML=recorrentes.map(r=>`
+    <div class="card" style="opacity:${r.ativo?1:.55};">
+      <div class="row-between">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:10px;background:${r.tipo==='receita'?'var(--green-bg)':'var(--red-bg)'};display:flex;align-items:center;justify-content:center;font-size:16px;">${ICONS[r.cat]||'📦'}</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;">${r.desc}</div>
+            <div style="font-size:11.5px;color:var(--text2);">Todo dia <strong>${r.dia}</strong> · ${r.cat}${r.pagamento?' · '+({pix:'💸 Pix',dinheiro:'💵 Dinheiro',debito:'💳 Débito',credito:'💳 Crédito',boleto:'🔵 Boleto'}[r.pagamento]||r.pagamento):''}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:15px;font-weight:700;color:${r.tipo==='receita'?'var(--green)':'var(--red)'};">${r.tipo==='receita'?'+':'-'}${fmt(r.valor)}</div>
+          <span class="badge ${r.ativo?'b-green':'b-gray'}">${r.ativo?'ativo':'pausado'}</span>
+          <button class="btn btn-outline btn-sm" onclick="toggleRecorrente(${r.id});renderRecorrentesLancar()">${r.ativo?'Pausar':'Ativar'}</button>
+          <button class="btn btn-outline btn-sm" onclick="lancarRecorrenteManual(${r.id})">Lançar agora</button>
+          <button class="icon-btn icon-btn-del" onclick="delRecorrente(${r.id});renderRecorrentesLancar()">×</button>
+        </div>
+      </div>
+    </div>`).join('');
 }
 
 // ── Segurança & LGPD ──
