@@ -1392,31 +1392,100 @@ async function carregarDados(){
   setSyncStatus('carregando');
   try{
     const{data,error}=await sb.from('dados_usuario').select('*').eq('user_id',currentUser.id).single();
-    if(error&&error.code==='PGRST116'){
-      // Row doesn't exist yet, create it
-      await sb.from('dados_usuario').insert({user_id:currentUser.id});
+
+    if(error){
+      if(error.code==='PGRST116'){
+        // Usuário novo — cria linha no banco
+        try{
+          await sb.from('dados_usuario').insert({
+            user_id:currentUser.id,
+            txs:[],orc:{},metas:[],desafios:[],perfil:{nome:'',fechamento:1},
+            cat_extras:{receita:[],despesa:[]},cartoes:[],faturas:[],
+            recorrentes:[],planejamento:{}
+          });
+        }catch(insertErr){
+          // ignora erro de insert se já existe
+        }
+        setSyncStatus('ok');
+        return;
+      }
+      // Outro erro — tenta usar localStorage como fallback
+      console.warn('Erro ao carregar Supabase, usando localStorage:',error);
+      txs=ls('cfp-txs',[]);orc=ls('cfp-orc',{});metas=ls('cfp-metas',[]);
+      desafios=ls('cfp-des',[]);perfil=ls('cfp-perfil',{nome:'',fechamento:1});
+      catExtras=ls('cfp-cats',{receita:[],despesa:[]});
+      cartoes=ls('cfp-cartoes',[]);faturas=ls('cfp-faturas',[]);
+      recorrentes=ls('cfp-recorrentes',[]);planejamento=ls('cfp-planejamento',{});
+      setSyncStatus('erro');
       return;
     }
+
     if(data){
-      txs=data.txs||[];orc=data.orc||{};metas=data.metas||[];
-      desafios=data.desafios||[];perfil=data.perfil||{nome:'',fechamento:1};
+      txs=data.txs||[];
+      orc=data.orc||{};
+      metas=data.metas||[];
+      desafios=data.desafios||[];
+      perfil=data.perfil||{nome:'',fechamento:1};
       catExtras=data.cat_extras||{receita:[],despesa:[]};
-      cartoes=data.cartoes||[];faturas=data.faturas||[];recorrentes=data.recorrentes||[];planejamento=data.planejamento||{};
+      cartoes=data.cartoes||[];
+      faturas=data.faturas||[];
+      recorrentes=data.recorrentes||[];
+      planejamento=data.planejamento||{};
+      // Salvar no localStorage como cache
+      ss('cfp-txs',txs);ss('cfp-orc',orc);ss('cfp-metas',metas);
+      ss('cfp-des',desafios);ss('cfp-perfil',perfil);ss('cfp-cats',catExtras);
+      ss('cfp-cartoes',cartoes);ss('cfp-faturas',faturas);
+      ss('cfp-recorrentes',recorrentes);ss('cfp-planejamento',planejamento);
     }
     setSyncStatus('ok');
-  }catch(e){setSyncStatus('erro');}
+  }catch(e){
+    console.error('Erro crítico ao carregar dados:',e);
+    // Fallback localStorage
+    txs=ls('cfp-txs',[]);orc=ls('cfp-orc',{});metas=ls('cfp-metas',[]);
+    desafios=ls('cfp-des',[]);perfil=ls('cfp-perfil',{nome:'',fechamento:1});
+    catExtras=ls('cfp-cats',{receita:[],despesa:[]});
+    cartoes=ls('cfp-cartoes',[]);faturas=ls('cfp-faturas',[]);
+    recorrentes=ls('cfp-recorrentes',[]);planejamento=ls('cfp-planejamento',{});
+    setSyncStatus('erro');
+  }
 }
 
 async function salvarDados(){
   if(!currentUser)return;
   setSyncStatus('salvando');
   try{
-    await sb.from('dados_usuario').upsert({
-      user_id:currentUser.id,txs,orc,metas,desafios,perfil,
-      cat_extras:catExtras,cartoes,faturas,recorrentes,planejamento,atualizado_em:new Date().toISOString()
-    },{onConflict:'user_id'});
+    const payload={
+      user_id:currentUser.id,
+      txs:txs||[],
+      orc:orc||{},
+      metas:metas||[],
+      desafios:desafios||[],
+      perfil:perfil||{nome:'',fechamento:1},
+      cat_extras:catExtras||{receita:[],despesa:[]},
+      cartoes:cartoes||[],
+      faturas:faturas||[],
+      recorrentes:recorrentes||[],
+      planejamento:planejamento||{},
+      atualizado_em:new Date().toISOString()
+    };
+    const{error}=await sb.from('dados_usuario').upsert(payload,{onConflict:'user_id'});
+    if(error){
+      console.error('Erro ao salvar no Supabase:',error);
+      // Salva no localStorage como backup
+      ss('cfp-txs',txs);ss('cfp-orc',orc);ss('cfp-metas',metas);
+      ss('cfp-des',desafios);ss('cfp-perfil',perfil);ss('cfp-cats',catExtras);
+      ss('cfp-cartoes',cartoes);ss('cfp-faturas',faturas);
+      ss('cfp-recorrentes',recorrentes);ss('cfp-planejamento',planejamento);
+      setSyncStatus('erro');
+      return;
+    }
+    // Cache local
+    ss('cfp-txs',txs);ss('cfp-orc',orc);ss('cfp-metas',metas);
     setSyncStatus('ok');
-  }catch(e){setSyncStatus('erro');}
+  }catch(e){
+    console.error('Erro crítico ao salvar:',e);
+    setSyncStatus('erro');
+  }
 }
 
 function agendarSalvar(){
@@ -1483,12 +1552,23 @@ async function entrarNaApp(user){
     carregarUsuariosAdm();
     return;
   }
+  // Garantir colunas existem via upsert seguro
+  try{
+    await sb.from('dados_usuario').upsert({
+      user_id:user.id,
+      recorrentes:recorrentes||[],
+      planejamento:planejamento||{}
+    },{onConflict:'user_id',ignoreDuplicates:true}).select('user_id');
+  }catch(e){/* ignora — colunas já existem */}
+
   await carregarDados();
+  perfil=perfil||{};
   perfil.nome=perfil.nome||user.user_metadata?.nome||'';
-  renderAll();atualizarPerfil();
+  renderAll();
+  atualizarPerfil();
   resetSessionTimer();
   verificarLGPD();
-  setTimeout(verificarRecorrentes,2000); // verificar após carregar tudo
+  setTimeout(verificarRecorrentes,2000);
   showToast('Bem-vindo'+(perfil.nome?', '+perfil.nome:'')+'! 👋','success');
 }
 
