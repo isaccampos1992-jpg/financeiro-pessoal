@@ -4247,6 +4247,7 @@ function renderPlanejamento(){
   const chave=`${ano}`;
   if(!planejamento[chave])planejamento[chave]={};
   const dadosAno=planejamento[chave];
+  const hoje=new Date();
 
   // Métricas anuais
   let totalRecPrev=0,totalDespPrev=0,totalRecReal=0,totalDespReal=0;
@@ -4254,57 +4255,90 @@ function renderPlanejamento(){
     const m=String(i+1).padStart(2,'0');
     const mesStr=`${ano}-${m}`;
     const d=dadosAno[m]||{rec:0,desp:0};
-    totalRecPrev+=d.rec||0;
-    totalDespPrev+=d.desp||0;
+    totalRecPrev+=d.rec||0;totalDespPrev+=d.desp||0;
     totalRecReal+=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
     totalDespReal+=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
   });
   const saldoPrev=totalRecPrev-totalDespPrev;
   const saldoReal=totalRecReal-totalDespReal;
-  document.getElementById('plan-metrics').innerHTML=`
-    <div class="metric m-rec"><div class="metric-label">Receita prevista</div><div class="metric-value c-green">${fmt(totalRecPrev)}</div><div class="metric-sub">Real: ${fmt(totalRecReal)}</div></div>
-    <div class="metric m-desp"><div class="metric-label">Despesa prevista</div><div class="metric-value c-red">${fmt(totalDespPrev)}</div><div class="metric-sub">Real: ${fmt(totalDespReal)}</div></div>
-    <div class="metric m-saldo"><div class="metric-label">Saldo previsto</div><div class="metric-value ${saldoPrev>=0?'c-green':'c-red'}">${fmt(saldoPrev)}</div><div class="metric-sub">Real: <span class="${saldoReal>=0?'c-green':'c-red'}">${fmt(saldoReal)}</span></div></div>`;
+  const mesesNoPlan=Array.from({length:12},(_,i)=>{
+    const m=String(i+1).padStart(2,'0');const mesStr=`${ano}-${m}`;
+    const d=dadosAno[m]||{rec:0,desp:0};if(!d.rec&&!d.desp)return null;
+    const rR=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
+    const dR=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
+    if(!rR&&!dR)return null;
+    return(!d.rec||rR>=d.rec*.9)&&(!d.desp||dR<=d.desp*1.1);
+  }).filter(v=>v!==null);
+  const qtdNoPlan=mesesNoPlan.filter(Boolean).length;
+  const qtdTotal=mesesNoPlan.length;
 
-  // Tabela mensal
-  const tbody=document.getElementById('plan-tbody');
-  const hoje=new Date();
-  tbody.innerHTML=Array.from({length:12},(_,i)=>{
+  document.getElementById('plan-metrics').innerHTML=`
+    <div class="metric m-rec"><div class="metric-label">Receita prevista/ano</div><div class="metric-value c-green">${fmt(totalRecPrev)}</div><div class="metric-sub">Real: <strong>${fmt(totalRecReal)}</strong></div></div>
+    <div class="metric m-desp"><div class="metric-label">Despesa prevista/ano</div><div class="metric-value c-red">${fmt(totalDespPrev)}</div><div class="metric-sub">Real: <strong>${fmt(totalDespReal)}</strong></div></div>
+    <div class="metric m-saldo"><div class="metric-label">Saldo previsto/ano</div><div class="metric-value ${saldoPrev>=0?'c-green':'c-red'}">${fmt(saldoPrev)}</div><div class="metric-sub">Real: <span class="${saldoReal>=0?'c-green':'c-red'}">${fmt(saldoReal)}</span>${qtdTotal>0?' · '+qtdNoPlan+'/'+qtdTotal+' meses no plano':''}</div></div>`;
+
+  // Cards mensais
+  const cards=document.getElementById('plan-cards');
+  cards.innerHTML=Array.from({length:12},(_,i)=>{
     const m=String(i+1).padStart(2,'0');
     const mesStr=`${ano}-${m}`;
     const d=dadosAno[m]||{rec:0,desp:0};
     const recReal=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
     const despReal=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
-    const isFuturo=new Date(ano,i,1)>hoje;
+    const isFuturo=new Date(ano,i,28)>hoje;
     const isAtual=ano===hoje.getFullYear()&&i===hoje.getMonth();
-    let status='—';let statusCor='var(--text3)';
-    if(!isFuturo&&(d.rec>0||d.desp>0)){
-      const okRec=d.rec===0||recReal>=d.rec*0.9;
+
+    // Status
+    let statusIcon='',statusCor='var(--border)',cardBorder='var(--border)';
+    if(!isFuturo&&(d.rec>0||d.desp>0)&&(recReal>0||despReal>0)){
+      const okRec=d.rec===0||recReal>=d.rec*.9;
       const okDesp=d.desp===0||despReal<=d.desp*1.1;
-      if(okRec&&okDesp){status='✅ No plano';statusCor='var(--green)';}
-      else if(!okRec&&!okDesp){status='❌ Fora do plano';statusCor='var(--red)';}
-      else if(!okRec){status='⚠️ Receita abaixo';statusCor='var(--amber)';}
-      else{status='⚠️ Despesa acima';statusCor='var(--amber)';}
+      if(okRec&&okDesp){statusIcon='✅';statusCor='var(--green)';cardBorder='var(--green)';}
+      else if(!okRec&&!okDesp){statusIcon='❌';statusCor='var(--red)';cardBorder='var(--red)';}
+      else{statusIcon='⚠️';statusCor='var(--amber)';cardBorder='var(--amber)';}
     }
-    const rowBg=isAtual?'background:rgba(30,64,175,.06);':'';
-    return `<tr style="${rowBg}border-bottom:1px solid var(--border);">
-      <td style="padding:10px 12px;font-size:13px;font-weight:${isAtual?'700':'500'};color:${isAtual?'var(--accent)':'var(--text)'};">
-        ${MESES_NOME[i]}${isAtual?' <span style="font-size:10px;padding:1px 6px;background:var(--blue-bg);color:var(--blue);border-radius:4px;">atual</span>':''}
-      </td>
-      <td style="padding:10px 12px;text-align:right;">
-        <input type="number" value="${d.rec||''}" min="0" step="100" placeholder="0,00"
+    if(isAtual){cardBorder='var(--blue)';}
+
+    // Barras de progresso
+    const pctRec=d.rec>0?Math.min(Math.round(recReal/d.rec*100),150):0;
+    const pctDesp=d.desp>0?Math.min(Math.round(despReal/d.desp*100),150):0;
+    const corRec=pctRec>=100?'var(--green)':'var(--blue-light)';
+    const corDesp=pctDesp>110?'var(--red)':pctDesp>90?'var(--amber)':'var(--green)';
+
+    return `<div style="background:var(--surface);border:1.5px solid ${cardBorder};border-radius:var(--radius-xl);padding:14px;transition:box-shadow .15s;${isAtual?'box-shadow:0 0 0 3px rgba(30,64,175,.12);':''}">
+      <!-- Header do card -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:${isAtual?'var(--blue)':'var(--text)'};">${MESES_ABREV[i]}</div>
+          ${isAtual?'<div style="font-size:9px;font-weight:600;color:var(--blue);text-transform:uppercase;letter-spacing:.08em;">mês atual</div>':''}
+        </div>
+        <span style="font-size:16px;">${statusIcon||''}</span>
+      </div>
+
+      <!-- Receita -->
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;">Receita</span>
+          ${recReal>0?`<span style="font-size:11px;font-weight:700;color:var(--green);">${fmt(recReal)}</span>`:''}
+        </div>
+        <input type="number" value="${d.rec||''}" min="0" step="100" placeholder="Previsto..."
           onchange="atualizarPlanMes('${chave}','${m}','rec',this.value)"
-          style="width:110px;text-align:right;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);">
-      </td>
-      <td style="padding:10px 12px;text-align:right;">
-        <input type="number" value="${d.desp||''}" min="0" step="100" placeholder="0,00"
+          style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);margin-bottom:${d.rec&&recReal?'4px':'0'};">
+        ${d.rec&&recReal?`<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${Math.min(pctRec,100)}%;background:${corRec};border-radius:2px;"></div></div>`:''}
+      </div>
+
+      <!-- Despesa -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <span style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;">Despesa</span>
+          ${despReal>0?`<span style="font-size:11px;font-weight:700;color:var(--red);">${fmt(despReal)}</span>`:''}
+        </div>
+        <input type="number" value="${d.desp||''}" min="0" step="100" placeholder="Limite..."
           onchange="atualizarPlanMes('${chave}','${m}','desp',this.value)"
-          style="width:110px;text-align:right;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);">
-      </td>
-      <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:${recReal>0?'var(--green)':'var(--text3)'};">${recReal>0?fmt(recReal):'—'}</td>
-      <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:${despReal>0?'var(--red)':'var(--text3)'};">${despReal>0?fmt(despReal):'—'}</td>
-      <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:600;color:${statusCor};">${status}</td>
-    </tr>`;
+          style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);margin-bottom:${d.desp&&despReal?'4px':'0'};">
+        ${d.desp&&despReal?`<div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;"><div style="height:100%;width:${Math.min(pctDesp,100)}%;background:${corDesp};border-radius:2px;"></div></div>`:''}
+      </div>
+    </div>`;
   }).join('');
 }
 
