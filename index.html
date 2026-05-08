@@ -2079,22 +2079,61 @@ function addTx(){
   const cartao=cartaoId?cartoes.find(c=>c.id===cartaoId):null;
 
   if(isParcelado){
+    // Parcelado — registra APENAS na fatura, NÃO no histórico de txs
+    // Só vai para o histórico quando a fatura for paga
     const[y,m]=parcelaInicio.split('-').map(Number);
     for(let i=0;i<nParcelas;i++){
       const d=new Date(y,m-1+i,cartao?.vencimento||10);
       const dataStr=d.toISOString().split('T')[0];
       const mesStr=dataStr.slice(0,7);
-      txs.unshift({id:Date.now()+i,tipo:'despesa',desc:`${desc} (${i+1}/${nParcelas})`,valor:valorParcela,cat,data:dataStr,metaLink:i===0?(metaLink||null):null,pagamento:'credito',cartaoId,parcelamento:{desc,total:valor,n:nParcelas,indice:i+1}});
-      if(cartaoId) faturas.push({id:Date.now()+i+10000,cartaoId,mes:mesStr,valor:valorParcela,data:dataStr,obs:`${desc} (${i+1}/${nParcelas})`,pago:false,parcelamento:{desc,total:valor,n:nParcelas,indice:i+1}});
+      // Verificar se já existe fatura para este mês e cartão — se sim, somar
+      const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mesStr&&!f.pago&&!f.parcelamento);
+      if(faturaExistente){
+        // Adicionar item à fatura existente
+        if(!faturaExistente.itens)faturaExistente.itens=[];
+        faturaExistente.itens.push({desc:`${desc} (${i+1}/${nParcelas})`,valor:valorParcela,data:dataStr,cat});
+        faturaExistente.valor=Math.round((faturaExistente.valor+valorParcela)*100)/100;
+      } else {
+        // Criar nova fatura para este mês
+        faturas.push({
+          id:Date.now()+i+10000,cartaoId,mes:mesStr,
+          valor:valorParcela,data:dataStr,
+          obs:`${desc} (${i+1}/${nParcelas})`,
+          pago:false,
+          itens:[{desc:`${desc} (${i+1}/${nParcelas})`,valor:valorParcela,data:dataStr,cat}],
+          parcelamento:{desc,total:valor,n:nParcelas,indice:i+1}
+        });
+      }
     }
-    showToast(`${nParcelas}x de ${fmt(valorParcela)} lançadas no cartão!`,'success');
+    showToast(`${nParcelas}x de ${fmt(valorParcela)} lançadas na fatura do cartão!`,'success');
+  } else if(isCredito&&cartaoId){
+    // À vista no cartão — registra APENAS na fatura do mês, NÃO no histórico
+    const mesStr=data.slice(0,7);
+    const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mesStr&&!f.pago);
+    if(faturaExistente){
+      // Somar à fatura existente do mês
+      if(!faturaExistente.itens)faturaExistente.itens=[];
+      faturaExistente.itens.push({desc,valor,data,cat});
+      faturaExistente.valor=Math.round((faturaExistente.valor+valor)*100)/100;
+      showToast(`${desc} adicionado à fatura de ${mesStr}!`,'success');
+    } else {
+      // Criar nova fatura para o mês
+      faturas.push({
+        id:Date.now()+10000,cartaoId,mes:mesStr,
+        valor,data,obs:desc,pago:false,
+        itens:[{desc,valor,data,cat}]
+      });
+      showToast('Compra registrada na fatura do cartão!','success');
+    }
+    // Vincular meta se houver
+    if(metaLink&&txType==='receita'){
+      const m=metas.find(x=>x.id===parseInt(metaLink));
+      if(m){m.atual=Math.min(m.atual+valor,m.alvo);ss('cfp-metas',metas);agendarSalvar();}
+    }
   } else {
-    const tx={id:Date.now(),tipo:txType,desc,valor,cat,data,metaLink:metaLink||null,pagamento:pagamento||null,cartaoId:cartaoId||null};
+    // Pagamento normal (Pix, débito, dinheiro, boleto) — vai direto para o histórico
+    const tx={id:Date.now(),tipo:txType,desc,valor,cat,data,metaLink:metaLink||null,pagamento:pagamento||null,cartaoId:null};
     txs.unshift(tx);
-    if(cartaoId&&cartao){
-      const mesStr=data.slice(0,7);
-      faturas.push({id:Date.now()+10000,cartaoId,mes:mesStr,valor,data,obs:desc,pago:false});
-    }
     if(metaLink&&txType==='receita'){
       const m=metas.find(x=>x.id===parseInt(metaLink));
       if(m){m.atual=Math.min(m.atual+valor,m.alvo);ss('cfp-metas',metas);agendarSalvar();}
@@ -3501,36 +3540,87 @@ function renderFaturasHistorico(){
   const el=document.getElementById('faturas-historico');
   if(!el)return;
   if(!lista.length){el.innerHTML='<div class="empty">Nenhuma fatura registrada ainda.</div>';return;}
-  el.innerHTML=lista.map(f=>{
-    const cartao=cartoes.find(c=>c.id===f.cartaoId)||{nome:'?',cor:'#888'};
-    const [y,m]=f.mes.split('-');
-    const nomesMes=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // Agrupar faturas por mês e cartão
+  const grupos={};
+  lista.forEach(f=>{
+    const chave=`${f.cartaoId}_${f.mes}`;
+    if(!grupos[chave])grupos[chave]={cartaoId:f.cartaoId,mes:f.mes,faturas:[],total:0,pago:true};
+    grupos[chave].faturas.push(f);
+    grupos[chave].total+=f.valor;
+    if(!f.pago)grupos[chave].pago=false;
+  });
+
+  const nomesMes=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  el.innerHTML=Object.values(grupos).map(g=>{
+    const cartao=cartoes.find(c=>c.id===g.cartaoId)||{nome:'?',cor:'#888'};
+    const[y,m]=g.mes.split('-');
     const mesLabel=nomesMes[parseInt(m)-1]+'/'+y.slice(2);
-    const isParcela=!!f.parcelamento;
-    return `<div class="card" style="border-left:3px solid ${cartao.cor};">
-      <div class="row-between">
+    const qtdItens=g.faturas.reduce((a,f)=>a+(f.itens?.length||1),0);
+    const temItens=g.faturas.some(f=>f.itens&&f.itens.length>0);
+    const todosItens=g.faturas.flatMap(f=>f.itens||[{desc:f.obs||'Compra',valor:f.valor,data:f.data,cat:'Cartão de Crédito'}]);
+    const idsPagar=g.faturas.filter(f=>!f.pago).map(f=>f.id);
+
+    return `<div class="card" style="border-left:3px solid ${cartao.cor};margin-bottom:8px;">
+      <div class="row-between" style="margin-bottom:${temItens?'10px':'0'};">
         <div>
-          <div style="font-size:13px;font-weight:600;">${cartao.nome} · ${mesLabel}${isParcela?` <span class="badge b-blue">${f.parcelamento.indice}/${f.parcelamento.n}</span>`:''}</div>
-          <div style="font-size:11.5px;color:var(--text2);">${f.obs||'Fatura mensal'} · ${new Date(f.data+'T12:00:00').toLocaleDateString('pt-BR')}</div>
+          <div style="font-size:13px;font-weight:600;">${cartao.nome} · ${mesLabel}</div>
+          <div style="font-size:11.5px;color:var(--text2);">${qtdItens} compra${qtdItens>1?'s':''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <div style="font-size:14px;font-weight:700;color:var(--red);">${fmt(f.valor)}</div>
-          <span class="badge ${f.pago?'b-green':'b-amber'}">${f.pago?'pago':'pendente'}</span>
-          ${!f.pago?`<button class="btn btn-outline btn-sm" onclick="pagarFatura(${f.id})">Pagar</button>`:''}
-          <button class="icon-btn icon-btn-del" onclick="delFatura(${f.id})">×</button>
+          <div style="font-size:15px;font-weight:700;color:var(--red);">${fmt(g.total)}</div>
+          <span class="badge ${g.pago?'b-green':'b-amber'}">${g.pago?'✅ pago':'⏳ pendente'}</span>
+          ${!g.pago?`<button class="btn btn-outline btn-sm" onclick="pagarFaturas([${idsPagar.join(',')}])">Pagar fatura</button>`:''}
         </div>
       </div>
+      ${temItens?`<div style="border-top:1px solid var(--border);padding-top:8px;">
+        ${todosItens.map(item=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;">
+            <div>
+              <span style="color:var(--text);font-weight:500;">${item.desc}</span>
+              <span style="color:var(--text3);margin-left:8px;">${item.cat||''}</span>
+            </div>
+            <span style="color:var(--red);font-weight:600;">${fmt(item.valor)}</span>
+          </div>`).join('')}
+      </div>`:''}
     </div>`;
   }).join('');
 }
 
-function pagarFatura(id){
+function pagarFaturas(ids){
+  ids.forEach(id=>pagarFatura(id,true));
+  renderAll();renderFaturasHistorico();renderCartoes();
+  showToast('Fatura paga! Despesas registradas no histórico.','success');
+}
+
+function pagarFatura(id, silente=false){
   const f=faturas.find(x=>x.id===id);if(!f)return;
   const cartao=cartoes.find(c=>c.id===f.cartaoId)||{nome:'?'};
+  if(!silente&&!confirm(`Confirmar pagamento da fatura de ${cartao.nome} — ${f.mes}?\nValor: ${fmt(f.valor)}`))return;
   f.pago=true;
-  txs.unshift({id:Date.now(),tipo:'despesa',desc:'Fatura '+cartao.nome+' '+f.mes,valor:f.valor,cat:'Cartão de Crédito',data:today(),cartaoId:f.cartaoId,faturaId:f.id});
+  // Ao pagar a fatura, lança como DESPESA no histórico
+  if(f.itens&&f.itens.length>0){
+    f.itens.forEach((item,i)=>{
+      txs.unshift({
+        id:Date.now()+i+Math.random(),tipo:'despesa',
+        desc:item.desc,valor:item.valor,
+        cat:item.cat||'Cartão de Crédito',
+        data:today(),pagamento:'credito',
+        cartaoId:f.cartaoId,faturaId:f.id,
+        faturaDesc:`Fatura ${cartao.nome} ${f.mes}`
+      });
+    });
+  } else {
+    txs.unshift({
+      id:Date.now()+Math.random(),tipo:'despesa',
+      desc:`Fatura ${cartao.nome} ${f.mes}`,
+      valor:f.valor,cat:'Cartão de Crédito',
+      data:today(),pagamento:'credito',
+      cartaoId:f.cartaoId,faturaId:f.id
+    });
+  }
   ss('cfp-faturas',faturas);ss('cfp-txs',txs);agendarSalvar();
-  renderFaturasHistorico();renderCartoes();showToast('Fatura paga!','success');
+  if(!silente){renderAll();renderFaturasHistorico();renderCartoes();showToast(`Fatura ${cartao.nome} ${f.mes} paga!`,'success');}
 }
 
 function delFatura(id){
