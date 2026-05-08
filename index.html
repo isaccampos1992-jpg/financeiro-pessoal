@@ -3591,7 +3591,9 @@ function renderFaturasHistorico(){
           <div style="font-size:15px;font-weight:700;color:var(--red);">${fmt(g.total)}</div>
           <span class="badge ${g.pago?'b-green':'b-amber'}">${g.pago?'✅ pago':'⏳ pendente'}</span>
           ${!g.pago?`<button class="btn btn-outline btn-sm" onclick="pagarFaturas([${idsPagar.join(',')}])">Pagar fatura</button>`:''}
+          <button class="icon-btn icon-btn-del" onclick="delFaturaGrupo('${g.cartaoId}','${g.mes}')" title="Remover fatura">×</button>
         </div>
+      </div>
       </div>
       ${temItens?`<div style="border-top:1px solid var(--border);padding-top:8px;">
         ${todosItens.map(item=>`
@@ -3608,9 +3610,19 @@ function renderFaturasHistorico(){
 }
 
 function pagarFaturas(ids){
+  if(!confirm(`Confirmar pagamento de ${ids.length} fatura(s)?`))return;
   ids.forEach(id=>pagarFatura(id,true));
   renderAll();renderFaturasHistorico();renderCartoes();
   showToast('Fatura paga! Despesas registradas no histórico.','success');
+}
+
+function delFaturaGrupo(cartaoId,mes){
+  const count=faturas.filter(f=>f.cartaoId==cartaoId&&f.mes===mes).length;
+  if(!confirm(`Remover fatura de ${mes}? (${count} item${count>1?'s':''})`))return;
+  faturas=faturas.filter(f=>!(f.cartaoId==cartaoId&&f.mes===mes));
+  ss('cfp-faturas',faturas);agendarSalvar();
+  renderFaturasHistorico();renderCartoes();
+  showToast('Fatura removida.','info');
 }
 
 function pagarFatura(id, silente=false){
