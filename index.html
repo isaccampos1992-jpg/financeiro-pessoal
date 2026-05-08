@@ -2018,6 +2018,21 @@ function calcParcelaLancar(){
   if(elG)elG.value=nG>1?fmt(Math.round(total/nG*100)/100):'—';
 }
 
+// ── Calcula o mês correto da fatura baseado no fechamento do cartão ──
+function getMesFatura(dataCompra, cartao){
+  const d=new Date(dataCompra+'T12:00:00');
+  const diaCompra=d.getDate();
+  const fechamento=cartao?.fechamento||7;
+  // Se a compra foi APÓS o fechamento, vai para a fatura do MÊS SEGUINTE
+  // Se foi ANTES ou NO dia do fechamento, vai para a fatura do MÊS ATUAL
+  if(diaCompra>fechamento){
+    const proximo=new Date(d.getFullYear(),d.getMonth()+1,1);
+    return proximo.toISOString().slice(0,7);
+  } else {
+    return d.toISOString().slice(0,7);
+  }
+}
+
 function addTx(){
   const desc=document.getElementById('tx-desc').value.trim();
   const valor=parseFloat(document.getElementById('tx-valor').value);
@@ -2079,22 +2094,19 @@ function addTx(){
   const cartao=cartaoId?cartoes.find(c=>c.id===cartaoId):null;
 
   if(isParcelado){
-    // Parcelado — registra APENAS na fatura, NÃO no histórico de txs
-    // Só vai para o histórico quando a fatura for paga
+    // Parcelado — registra APENAS na fatura, NÃO no histórico
     const[y,m]=parcelaInicio.split('-').map(Number);
     for(let i=0;i<nParcelas;i++){
       const d=new Date(y,m-1+i,cartao?.vencimento||10);
       const dataStr=d.toISOString().split('T')[0];
+      // Para parcelas usa o mês diretamente (já está definido pelo usuário)
       const mesStr=dataStr.slice(0,7);
-      // Verificar se já existe fatura para este mês e cartão — se sim, somar
       const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mesStr&&!f.pago&&!f.parcelamento);
       if(faturaExistente){
-        // Adicionar item à fatura existente
         if(!faturaExistente.itens)faturaExistente.itens=[];
         faturaExistente.itens.push({desc:`${desc} (${i+1}/${nParcelas})`,valor:valorParcela,data:dataStr,cat});
         faturaExistente.valor=Math.round((faturaExistente.valor+valorParcela)*100)/100;
       } else {
-        // Criar nova fatura para este mês
         faturas.push({
           id:Date.now()+i+10000,cartaoId,mes:mesStr,
           valor:valorParcela,data:dataStr,
@@ -2107,8 +2119,8 @@ function addTx(){
     }
     showToast(`${nParcelas}x de ${fmt(valorParcela)} lançadas na fatura do cartão!`,'success');
   } else if(isCredito&&cartaoId){
-    // À vista no cartão — registra APENAS na fatura do mês, NÃO no histórico
-    const mesStr=data.slice(0,7);
+    // À vista no cartão — registra na fatura do mês CORRETO baseado no fechamento
+    const mesStr=getMesFatura(data,cartao);
     const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mesStr&&!f.pago);
     if(faturaExistente){
       // Somar à fatura existente do mês
@@ -3401,20 +3413,28 @@ function getFaturasMes(cartaoId,mes){
 }
 
 function getUsoAtualCartao(cartao){
-  // Soma faturas pendentes + transações diretas vinculadas ao cartão no mês atual
-  const mesAtual=new Date().toISOString().slice(0,7);
-  // Faturas registradas
-  const totalFaturas=faturas
-    .filter(f=>f.cartaoId===cartao.id&&!f.pago&&f.mes>=mesAtual)
+  // Soma todas as faturas não pagas — representa o limite comprometido
+  return faturas
+    .filter(f=>f.cartaoId===cartao.id&&!f.pago)
     .reduce((a,f)=>a+f.valor,0);
-  return totalFaturas;
 }
 
 function getFaturaAbertaCartao(cartao){
-  // Valor total das faturas pendentes do mês atual
-  const mesAtual=new Date().toISOString().slice(0,7);
+  // Fatura do mês atual (que está aberta/sendo formada)
+  const hoje=new Date();
+  const diaHoje=hoje.getDate();
+  const fechamento=cartao.fechamento||7;
+  // Mês da fatura atual baseado no fechamento
+  let mesFatura;
+  if(diaHoje>fechamento){
+    // Após fechamento — fatura do próximo mês está sendo formada
+    mesFatura=new Date(hoje.getFullYear(),hoje.getMonth()+1,1).toISOString().slice(0,7);
+  } else {
+    // Antes do fechamento — fatura do mês atual ainda está aberta
+    mesFatura=hoje.toISOString().slice(0,7);
+  }
   return faturas
-    .filter(f=>f.cartaoId===cartao.id&&!f.pago&&f.mes===mesAtual)
+    .filter(f=>f.cartaoId===cartao.id&&!f.pago&&f.mes===mesFatura)
     .reduce((a,f)=>a+f.valor,0);
 }
 
