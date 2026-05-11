@@ -1995,6 +1995,18 @@ function toggleCartaoFields(){
   }
 }
 
+function toggleParcelaFields(){
+  const sim=document.getElementById('tx-parcelado').value==='sim';
+  const fields=document.getElementById('parcela-fields');
+  if(fields)fields.style.display=sim?'block':'none';
+  if(sim){
+    const hoje=new Date();
+    const ini=document.getElementById('tx-parcela-inicio');
+    if(ini&&!ini.value)ini.value=hoje.toISOString().slice(0,7);
+    calcParcelaLancar();
+  }
+}
+
 function toggleParcelaGeralFields(){
   const cb=document.getElementById('tx-is-parcelado');
   const fields=document.getElementById('parcela-geral-fields');
