@@ -940,6 +940,7 @@ textarea{resize:vertical;min-height:60px;}
     <select id="plan-ano" onchange="renderPlanejamento()" style="font-size:14px;font-weight:700;padding:7px 14px;border:1.5px solid var(--border2);border-radius:var(--radius);background:var(--surface);color:var(--text);"></select>
     <button class="btn btn-outline btn-sm" onclick="mudarAnoPlan(1)">→</button>
     <button class="btn btn-outline btn-sm" onclick="copiarMetaParaTodos()">📋 Replicar jan. para todos</button>
+    <button class="btn btn-ia" style="width:auto;padding:8px 18px;margin-bottom:0;font-size:13px;" onclick="abrirIAPlanejamento()">✦ Sugerir com IA</button>
     <button class="btn btn-dark" style="margin-top:0;width:auto;padding:8px 18px;" onclick="salvarPlanejamento()">💾 Salvar plano</button>
   </div>
 
@@ -1173,6 +1174,21 @@ textarea{resize:vertical;min-height:60px;}
       <button class="btn btn-ia" onclick="rodarIAInvestimentos()">✦ Gerar sugestão de investimento</button>
     </div>
     <div id="inv-ia-resultado"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-ia-plan">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-title">✦ Sugestão IA para Planejamento Anual</div>
+    <div id="ia-plan-status" style="font-size:12.5px;color:var(--text2);margin-bottom:12px;"></div>
+    <div id="ia-plan-resultado"></div>
+    <div class="modal-actions" id="ia-plan-acoes" style="display:none;">
+      <button class="btn btn-dark" style="margin-top:0;flex:1;" onclick="aplicarSugestaoIA()">✅ Aplicar sugestões</button>
+      <button class="btn btn-outline" onclick="fecharModal('modal-ia-plan')">Cancelar</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline btn-sm" onclick="fecharModal('modal-ia-plan')">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -4480,6 +4496,196 @@ function atualizarPlanMes(chave,mes,campo,valor){
   if(!planejamento[chave])planejamento[chave]={};
   if(!planejamento[chave][mes])planejamento[chave][mes]={rec:0,desp:0};
   planejamento[chave][mes][campo]=parseFloat(valor)||0;
+}
+
+// ── IA Planejamento Anual ──
+let sugestoesIA = null;
+
+function abrirIAPlanejamento(){
+  document.getElementById('modal-ia-plan').classList.add('open');
+  document.getElementById('ia-plan-acoes').style.display='none';
+  document.getElementById('ia-plan-resultado').innerHTML='';
+  document.getElementById('ia-plan-status').textContent='';
+  sugestoesIA=null;
+  gerarSugestaoIAPlanejamento();
+}
+
+async function gerarSugestaoIAPlanejamento(){
+  const status=document.getElementById('ia-plan-status');
+  const resultado=document.getElementById('ia-plan-resultado');
+  status.innerHTML='<span style="color:var(--accent);">✦ Analisando seu histórico financeiro...</span>';
+
+  const ano=parseInt(document.getElementById('plan-ano')?.value||new Date().getFullYear());
+  const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const ABREV=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // Coletar histórico por mês dos últimos 12 meses
+  const historico=[];
+  for(let i=11;i>=0;i--){
+    const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);
+    const mesStr=d.toISOString().slice(0,7);
+    const rec=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
+    const desp=txs.filter(t=>t.data.startsWith(mesStr)&&t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
+    if(rec>0||desp>0){
+      historico.push({mes:mesStr,mesNome:ABREV[d.getMonth()]+'/'+String(d.getFullYear()).slice(2),rec:Math.round(rec),desp:Math.round(desp)});
+    }
+  }
+
+  // Médias por mês do ano (sazonalidade)
+  const mediasPorMes={};
+  for(let m=0;m<12;m++){
+    const mesNum=String(m+1).padStart(2,'0');
+    const registros=txs.filter(t=>t.data.slice(5,7)===mesNum);
+    const anos=[...new Set(registros.map(t=>t.data.slice(0,4)))];
+    if(anos.length>0){
+      const recMedia=Math.round(registros.filter(t=>t.tipo==='receita').reduce((a,t)=>a+t.valor,0)/anos.length);
+      const despMedia=Math.round(registros.filter(t=>t.tipo==='despesa').reduce((a,t)=>a+t.valor,0)/anos.length);
+      mediasPorMes[mesNum]={recMedia,despMedia,anos:anos.length};
+    }
+  }
+
+  // Categorias mais gastas
+  const porCat={};
+  txs.filter(t=>t.tipo==='despesa').forEach(t=>{porCat[t.cat]=(porCat[t.cat]||0)+t.valor;});
+  const topCats=Object.entries(porCat).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`${k}: ${fmt(Math.round(v/12))}/mês`).join(', ');
+
+  const mediaGlobalRec=historico.length>0?Math.round(historico.reduce((a,h)=>a+h.rec,0)/historico.length):0;
+  const mediaGlobalDesp=historico.length>0?Math.round(historico.reduce((a,h)=>a+h.desp,0)/historico.length):0;
+  const despFixas=recorrentes.filter(r=>r.ativo&&r.tipo==='despesa').reduce((a,r)=>a+r.valor,0);
+
+  const prompt=`Você é um planejador financeiro pessoal brasileiro especializado. 
+Analise o histórico financeiro abaixo e sugira valores de planejamento para cada mês de ${ano}.
+
+HISTÓRICO RECENTE (últimos meses):
+${historico.map(h=>`${h.mesNome}: Receita R$${h.rec} | Despesa R$${h.desp} | Saldo R$${h.rec-h.desp}`).join('\n')||'dados insuficientes'}
+
+MÉDIAS GLOBAIS:
+- Receita média mensal: R$${mediaGlobalRec}
+- Despesa média mensal: R$${mediaGlobalDesp}
+- Despesas fixas mensais: R$${Math.round(despFixas)}
+- Top categorias: ${topCats||'não informado'}
+
+SAZONALIDADE DETECTADA (média histórica por mês):
+${Object.entries(mediasPorMes).map(([m,v])=>`Mês ${m}: Rec R$${v.recMedia} | Desp R$${v.despMedia} (${v.anos} ano${v.anos>1?'s':''})`).join('\n')||'histórico insuficiente para sazonalidade'}
+
+Gere sugestões de planejamento para ${ano}. Considere:
+1. Sazonalidade (dezembro/janeiro costumam ter gastos maiores)
+2. Meses com datas comemorativas (carnaval=fev, páscoa, festas juninas=jun, natal=dez)
+3. Impostos anuais (IPTU/IPVA costumam vencer em jan-mar)
+4. Metas realistas baseadas no histórico real
+5. Uma taxa de poupança saudável de pelo menos 10-20%
+
+Responda APENAS com um JSON válido no seguinte formato (sem texto antes ou depois):
+{
+  "resumo": "explicação em 2-3 linhas do raciocínio geral",
+  "taxaPoupancaSugerida": 15,
+  "meses": {
+    "01": {"rec": 3200, "desp": 2600, "obs": "Janeiro: IPTU/IPVA"},
+    "02": {"rec": 3200, "desp": 2800, "obs": "Fevereiro: Carnaval"},
+    "03": {"rec": 3200, "desp": 2500, "obs": "Março: mês normal"},
+    "04": {"rec": 3200, "desp": 2500, "obs": "Abril: Páscoa"},
+    "05": {"rec": 3200, "desp": 2500, "obs": "Maio: mês normal"},
+    "06": {"rec": 3200, "desp": 2600, "obs": "Junho: festas juninas"},
+    "07": {"rec": 3200, "desp": 2500, "obs": "Julho: férias"},
+    "08": {"rec": 3200, "desp": 2500, "obs": "Agosto: mês normal"},
+    "09": {"rec": 3200, "desp": 2500, "obs": "Setembro: mês normal"},
+    "10": {"rec": 3200, "desp": 2500, "obs": "Outubro: mês normal"},
+    "11": {"rec": 3200, "desp": 2700, "obs": "Novembro: Black Friday"},
+    "12": {"rec": 3200, "desp": 3200, "obs": "Dezembro: Natal/viagens"}
+  }
+}`;
+
+  try{
+    const r=await fetch('https://cmelkwjuuvqqsvfrbhqw.supabase.co/functions/v1/analisar-ia',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify({prompt,temperature:0.5})
+    });
+    const data=await r.json();
+    const texto=(data.content&&data.content[0]&&data.content[0].text)||data.text||'';
+
+    // Parse JSON da resposta
+    let sugestao;
+    try{
+      const jsonMatch=texto.match(/\{[\s\S]*\}/);
+      sugestao=JSON.parse(jsonMatch?.[0]||texto);
+    }catch(e){
+      status.innerHTML='<span style="color:var(--red);">Erro ao processar resposta da IA. Tente novamente.</span>';
+      return;
+    }
+
+    sugestoesIA=sugestao;
+
+    // Renderizar sugestões
+    const totalRecAnual=Object.values(sugestao.meses).reduce((a,m)=>a+m.rec,0);
+    const totalDespAnual=Object.values(sugestao.meses).reduce((a,m)=>a+m.desp,0);
+    const saldoAnual=totalRecAnual-totalDespAnual;
+
+    resultado.innerHTML=`
+      <!-- Resumo -->
+      <div style="background:var(--blue-bg);border:1px solid rgba(30,64,175,.15);border-left:3px solid var(--accent);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text2);line-height:1.7;">
+        <strong style="color:var(--accent);">💡 Análise da IA:</strong> ${sugestao.resumo}
+      </div>
+
+      <!-- Métricas anuais sugeridas -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+        <div class="metric m-rec"><div class="metric-label">Receita anual</div><div class="metric-value c-green" style="font-size:16px;">${fmt(totalRecAnual)}</div><div class="metric-sub">média ${fmt(Math.round(totalRecAnual/12))}/mês</div></div>
+        <div class="metric m-desp"><div class="metric-label">Despesa anual</div><div class="metric-value c-red" style="font-size:16px;">${fmt(totalDespAnual)}</div><div class="metric-sub">média ${fmt(Math.round(totalDespAnual/12))}/mês</div></div>
+        <div class="metric m-saldo"><div class="metric-label">Poupança sugerida</div><div class="metric-value c-green" style="font-size:16px;">${sugestao.taxaPoupancaSugerida}%</div><div class="metric-sub">${fmt(saldoAnual)} no ano</div></div>
+      </div>
+
+      <!-- Tabela mensal -->
+      <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead style="position:sticky;top:0;background:var(--surface);">
+            <tr style="background:var(--accent);">
+              <th style="padding:8px 10px;text-align:left;color:#fff;font-weight:600;">Mês</th>
+              <th style="padding:8px 10px;text-align:right;color:#fff;font-weight:600;">Receita</th>
+              <th style="padding:8px 10px;text-align:right;color:#fff;font-weight:600;">Despesa</th>
+              <th style="padding:8px 10px;text-align:right;color:#fff;font-weight:600;">Saldo</th>
+              <th style="padding:8px 10px;text-align:left;color:#fff;font-weight:600;">Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${Object.entries(sugestao.meses).map(([m,v],i)=>{
+              const saldo=v.rec-v.desp;
+              return `<tr style="border-bottom:1px solid var(--border);${i%2?'background:var(--surface2)':''}">
+                <td style="padding:7px 10px;font-weight:600;">${MESES[parseInt(m)-1]}</td>
+                <td style="padding:7px 10px;text-align:right;color:var(--green);font-weight:600;">${fmt(v.rec)}</td>
+                <td style="padding:7px 10px;text-align:right;color:var(--red);font-weight:600;">${fmt(v.desp)}</td>
+                <td style="padding:7px 10px;text-align:right;font-weight:700;color:${saldo>=0?'var(--green)':'var(--red)'};">${fmt(saldo)}</td>
+                <td style="padding:7px 10px;color:var(--text2);font-size:11px;">${v.obs||''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;">* Revise os valores antes de aplicar. Você pode editar individualmente após aplicar.</div>`;
+
+    status.innerHTML='<span style="color:var(--green);">✅ Sugestão gerada com sucesso!</span>';
+    document.getElementById('ia-plan-acoes').style.display='flex';
+
+  }catch(e){
+    status.innerHTML='<span style="color:var(--red);">Erro de conexão. Verifique sua internet.</span>';
+    console.error(e);
+  }
+}
+
+function aplicarSugestaoIA(){
+  if(!sugestoesIA?.meses)return;
+  const ano=parseInt(document.getElementById('plan-ano')?.value||new Date().getFullYear());
+  const chave=`${ano}`;
+  if(!planejamento[chave])planejamento[chave]={};
+  // Aplicar todos os meses sugeridos
+  Object.entries(sugestoesIA.meses).forEach(([m,v])=>{
+    if(!planejamento[chave][m])planejamento[chave][m]={};
+    planejamento[chave][m].rec=v.rec;
+    planejamento[chave][m].desp=v.desp;
+  });
+  ss('cfp-planejamento',planejamento);agendarSalvar();
+  fecharModal('modal-ia-plan');
+  renderPlanejamento();
+  showToast('✅ Sugestões da IA aplicadas ao planejamento!','success');
 }
 
 function salvarPlanejamento(){
