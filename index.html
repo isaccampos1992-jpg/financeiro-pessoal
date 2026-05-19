@@ -845,6 +845,9 @@ textarea{resize:vertical;min-height:60px;}
 
   <!-- Lançar fatura -->
   <div id="csec-fatura" style="display:none;">
+    <div style="background:var(--blue-bg);border:1px solid rgba(30,64,175,.15);border-left:3px solid var(--accent);border-radius:var(--radius);padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6;">
+      <strong style="color:var(--accent);">ℹ️ Como funciona:</strong> Lance o valor da fatura aqui para registrar o que você gastou no cartão. O saldo em conta só é descontado quando você clicar em <strong>"Pagar fatura"</strong> no Histórico.
+    </div>
     <div class="card">
       <div class="card-title" style="margin-bottom:14px;">Lançar fatura do cartão</div>
       <div class="form-row">
@@ -3415,13 +3418,22 @@ function lancarFatura(){
   const msg=document.getElementById('fat-msg');
   if(!cartaoId||!mes||!valor||!data){msg.style.color='var(--red)';msg.textContent='Preencha todos os campos.';return;}
   const cartao=cartoes.find(c=>c.id===cartaoId);
-  const fatura={id:Date.now(),cartaoId,mes,valor,data,obs,pago:true};
-  faturas.push(fatura);
-  // Lançar como despesa no histórico automaticamente
-  txs.unshift({id:Date.now()+1,tipo:'despesa',desc:'Fatura '+cartao.nome+' '+mes,valor,cat:'Cartão de Crédito',data,cartaoId,faturaId:fatura.id});
-  ss('cfp-faturas',faturas);ss('cfp-txs',txs);agendarSalvar();
-  ['fat-cartao','fat-mes','fat-valor','fat-data','fat-obs'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
-  msg.style.color='var(--green)';msg.textContent='✓ Fatura registrada e lançada no histórico!';
+  // Verificar se já existe fatura pendente para este mês — se sim, somar
+  const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mes&&!f.pago);
+  if(faturaExistente){
+    faturaExistente.valor=Math.round((faturaExistente.valor+valor)*100)/100;
+    if(!faturaExistente.itens)faturaExistente.itens=[];
+    faturaExistente.itens.push({desc:obs||'Lançamento manual',valor,data,cat:'Cartão de Crédito'});
+    msg.style.color='var(--green)';msg.textContent='✓ Valor adicionado à fatura existente de '+mes+'!';
+  } else {
+    // Criar nova fatura pendente — só vai para o histórico quando pagar
+    const fatura={id:Date.now(),cartaoId,mes,valor,data,obs,pago:false,
+      itens:[{desc:obs||'Lançamento manual',valor,data,cat:'Cartão de Crédito'}]};
+    faturas.push(fatura);
+    msg.style.color='var(--green)';msg.textContent='✓ Fatura registrada! Pague em Cartões → Histórico.';
+  }
+  ss('cfp-faturas',faturas);agendarSalvar();
+  ['fat-valor','fat-obs'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
   renderCartoes();renderAll();
   setTimeout(()=>msg.textContent='',3000);
 }
@@ -3436,13 +3448,25 @@ function lancarParcelado(){
   if(!cartaoId||!desc||!total||!n||!inicio){msg.style.color='var(--red)';msg.textContent='Preencha todos os campos.';return;}
   const parcela=Math.round(total/n*100)/100;
   const cartao=cartoes.find(c=>c.id===cartaoId);
-  const [y,m]=inicio.split('-').map(Number);
+  const[y,m]=inicio.split('-').map(Number);
   for(let i=0;i<n;i++){
-    const d=new Date(y,m-1+i,cartao.vencimento||10);
+    const d=new Date(y,m-1+i,cartao?.vencimento||10);
     const dataStr=d.toISOString().split('T')[0];
     const mesStr=dataStr.slice(0,7);
-    const fatura={id:Date.now()+i,cartaoId,mes:mesStr,valor:parcela,data:dataStr,obs:`${desc} (${i+1}/${n})`,pago:false,parcelamento:{desc,total,n,parcela,indice:i+1}};
-    faturas.push(fatura);
+    // Somar à fatura existente se houver
+    const faturaExistente=faturas.find(f=>f.cartaoId===cartaoId&&f.mes===mesStr&&!f.pago);
+    if(faturaExistente){
+      if(!faturaExistente.itens)faturaExistente.itens=[];
+      faturaExistente.itens.push({desc:`${desc} (${i+1}/${n})`,valor:parcela,data:dataStr,cat:'Cartão de Crédito'});
+      faturaExistente.valor=Math.round((faturaExistente.valor+parcela)*100)/100;
+    } else {
+      faturas.push({
+        id:Date.now()+i,cartaoId,mes:mesStr,valor:parcela,data:dataStr,
+        obs:`${desc} (${i+1}/${n})`,pago:false,
+        itens:[{desc:`${desc} (${i+1}/${n})`,valor:parcela,data:dataStr,cat:'Cartão de Crédito'}],
+        parcelamento:{desc,total,n,parcela,indice:i+1}
+      });
+    }
   }
   ss('cfp-faturas',faturas);agendarSalvar();
   ['parc-cartao','parc-desc','parc-total','parc-n','parc-inicio'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
