@@ -198,6 +198,7 @@ textarea{resize:vertical;min-height:60px;}
 .modal-backdrop.open{display:flex;}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:26px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);animation:modalIn .2s cubic-bezier(.34,1.56,.64,1);}
 @keyframes modalIn{from{transform:scale(.94) translateY(10px);opacity:0}to{transform:none;opacity:1}}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .modal-title{font-size:16px;font-weight:700;margin-bottom:18px;letter-spacing:-.3px;}
 .modal-actions{display:flex;gap:10px;margin-top:16px;}
 
@@ -1091,15 +1092,69 @@ textarea{resize:vertical;min-height:60px;}
 <div id="page-ia" class="page">
   <div class="page-title">Análise IA</div>
   <div class="page-sub">Diagnóstico financeiro inteligente e personalizado</div>
-  <div class="ia-box" style="margin-bottom:16px;">
-    <div class="ia-header"><span style="font-size:20px;">✦</span><span class="ia-title">O que a IA analisa</span><span class="badge b-purple" style="margin-left:auto;">Claude</span></div>
-    <div class="ia-body">Compara mês atual com o anterior · Identifica desperdícios com valores · Avalia cartões · Analisa planejamento anual · Verifica reserva de emergência · Alerta sobre despesas fixas · Sugere metas · Prevê sobra do mês · Dá nota de saúde financeira de 0 a 10</div>
+
+  <!-- Sub-tabs -->
+  <div class="sub-tabs" style="margin-bottom:16px;">
+    <button class="sub-tab active" id="iatab-analise" onclick="setIATab('analise')">✦ Análise completa</button>
+    <button class="sub-tab" id="iatab-chat" onclick="setIATab('chat')">💬 Perguntar à IA</button>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:16px;">
-    <button class="btn btn-ia" style="margin-bottom:0;" onclick="rodarIA()" id="btn-ia">✦ Analisar agora</button>
-    <button class="btn btn-outline" onclick="limparAnalise()" style="white-space:nowrap;">Limpar</button>
+
+  <!-- ABA ANÁLISE COMPLETA -->
+  <div id="iasec-analise">
+    <div class="ia-box" style="margin-bottom:16px;">
+      <div class="ia-header"><span style="font-size:20px;">✦</span><span class="ia-title">O que a IA analisa</span><span class="badge b-purple" style="margin-left:auto;">Claude</span></div>
+      <div class="ia-body">Compara mês atual com o anterior · Identifica desperdícios com valores · Avalia cartões · Analisa planejamento anual · Verifica reserva de emergência · Alerta sobre despesas fixas · Sugere metas · Prevê sobra do mês · Dá nota de saúde financeira de 0 a 10</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-ia" style="margin-bottom:0;" onclick="rodarIA()" id="btn-ia">✦ Analisar agora</button>
+      <button class="btn btn-outline" onclick="limparAnalise()" style="white-space:nowrap;">Limpar</button>
+    </div>
+    <div id="ia-resultado"></div>
   </div>
-  <div id="ia-resultado"></div>
+
+  <!-- ABA CHAT IA -->
+  <div id="iasec-chat" style="display:none;">
+    <div class="ia-box" style="margin-bottom:14px;">
+      <div class="ia-header"><span style="font-size:20px;">💬</span><span class="ia-title">Perguntar à IA</span><span class="badge b-purple" style="margin-left:auto;">Claude</span></div>
+      <div class="ia-body">Faça qualquer pergunta sobre suas finanças. A IA usa seus dados reais para responder — saldo, gastos, cartões, metas e histórico.</div>
+    </div>
+
+    <!-- Sugestões de perguntas -->
+    <div id="chat-sugestoes" style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Sugestões de perguntas</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${[
+          'Quanto gastei com alimentação nos últimos 3 meses?',
+          'Consigo comprar algo de R$ 2.000 em 6 meses?',
+          'Onde estou desperdiçando mais dinheiro?',
+          'Qual minha categoria de gasto que mais cresceu?',
+          'Tenho condições de aumentar minha reserva agora?',
+          'Vale a pena quitar meu cartão antecipadamente?'
+        ].map(q=>`<button onclick="usarSugestaoChat('${q}')" style="font-size:11.5px;padding:6px 12px;border:1px solid var(--border2);border-radius:20px;background:var(--surface2);color:var(--text2);cursor:pointer;font-family:inherit;transition:all .15s;" onmouseover="this.style.background='var(--blue-bg)';this.style.color='var(--blue)'" onmouseout="this.style.background='var(--surface2)';this.style.color='var(--text2)'">${q}</button>`).join('')}
+      </div>
+    </div>
+
+    <!-- Histórico do chat -->
+    <div id="chat-historico" style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;margin-bottom:14px;scroll-behavior:smooth;"></div>
+
+    <!-- Input -->
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <div style="flex:1;position:relative;">
+        <textarea id="chat-input" placeholder="Ex: Quanto gastei em junho? / Posso comprar um celular de R$ 1.500? / Qual meu maior gasto do mês?"
+          style="width:100%;min-height:52px;max-height:120px;padding:12px 14px;border:1.5px solid var(--border2);border-radius:12px;background:var(--surface2);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;line-height:1.5;box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarChatIA();}"></textarea>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px;">Enter para enviar · Shift+Enter para nova linha</div>
+      </div>
+      <button onclick="enviarChatIA()" id="btn-chat-enviar"
+        style="padding:14px 20px;background:linear-gradient(135deg,#1e40af,#7c3aed);color:#fff;border:none;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;transition:opacity .15s;">
+        Enviar ✦
+      </button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+      <div style="font-size:10.5px;color:var(--text3);">~R$ 0,003 por pergunta</div>
+      <button onclick="limparChatIA()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;">🗑️ Limpar conversa</button>
+    </div>
+  </div>
 </div>
 
 <!-- RECORRENTES -->
@@ -1390,13 +1445,54 @@ textarea{resize:vertical;min-height:60px;}
     <div class="modal-title" id="mi-title">Iniciar desafio</div>
     <div style="font-size:12.5px;color:var(--text2);margin-bottom:16px;" id="mi-desc"></div>
     <input type="hidden" id="mi-tid">
-    <div class="form-row full">
+
+    <!-- Campos normais -->
+    <div class="form-row full" id="mi-meta-wrap">
       <div class="form-group">
         <label id="mi-meta-label">Meta financeira (R$)</label>
         <input type="number" id="mi-meta" min="0" step="10" placeholder="0 = sem meta financeira">
         <span class="hint" id="mi-meta-hint"></span>
       </div>
     </div>
+
+    <!-- Campos específicos quitar dívida -->
+    <div id="mi-divida-fields" style="display:none;">
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Nome da dívida</label>
+          <input type="text" id="mi-divida-nome" placeholder="Ex: Fatura do cartão Inter, Empréstimo...">
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Valor total da dívida (R$)</label>
+          <input type="number" id="mi-divida-valor" min="0" step="10" placeholder="Ex: 5000" oninput="calcParcelaDesafio()">
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Forma de pagamento</label>
+          <select id="mi-divida-tipo" onchange="toggleParcelaDesafio()">
+            <option value="avista">💰 À vista</option>
+            <option value="parcelado">📅 Parcelado</option>
+          </select>
+        </div>
+      </div>
+      <div id="mi-divida-parcela-wrap" style="display:none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Número de parcelas</label>
+            <input type="number" id="mi-divida-parcelas" min="2" max="120" placeholder="Ex: 12" oninput="calcParcelaDesafio()">
+          </div>
+          <div class="form-group">
+            <label>Valor por parcela</label>
+            <input type="text" id="mi-divida-parcela-val" readonly style="background:var(--surface2);color:var(--green);font-weight:700;">
+          </div>
+        </div>
+      </div>
+      <div id="mi-divida-preview" style="font-size:12px;color:var(--text2);margin-top:6px;padding:8px 12px;background:var(--surface2);border-radius:var(--radius);display:none;"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-dark" style="flex:1;margin-top:0;" onclick="confirmarIniciar()">Iniciar desafio</button>
       <button class="btn btn-outline" onclick="fecharModal('modal-iniciar')">Cancelar</button>
@@ -2815,21 +2911,80 @@ function iniciarDesafio(tid){
   document.getElementById('mi-title').textContent=tpl.icon+' '+tpl.nome;
   document.getElementById('mi-desc').textContent=tpl.desc+' · '+tpl.dias+' dias';
   document.getElementById('mi-meta').value=tpl.meta||'';
-  const hasGrid=['desafio-52','desafio-365','centavos','um-porcento','quitar-divida'].includes(tid);
+  const isQuitar=tid==='quitar-divida';
+  // Mostrar campos específicos
+  document.getElementById('mi-meta-wrap').style.display=isQuitar?'none':'block';
+  document.getElementById('mi-divida-fields').style.display=isQuitar?'block':'none';
+  // Reset campos quitar
+  if(isQuitar){
+    document.getElementById('mi-divida-nome').value='';
+    document.getElementById('mi-divida-valor').value='';
+    document.getElementById('mi-divida-tipo').value='avista';
+    document.getElementById('mi-divida-parcelas').value='';
+    document.getElementById('mi-divida-parcela-val').value='';
+    document.getElementById('mi-divida-parcela-wrap').style.display='none';
+    document.getElementById('mi-divida-preview').style.display='none';
+  }
+  const hasGrid=['desafio-52','desafio-365','centavos','um-porcento'].includes(tid);
   document.getElementById('mi-meta-label').textContent=
     tid==='um-porcento'?'Seu salário mensal (R$) — base para o cálculo':
-    tid==='quitar-divida'?'Valor total da dívida (R$)':
     hasGrid?'Meta total (R$) — distribuída proporcionalmente':'Meta financeira (R$)';
   document.getElementById('mi-meta-hint').textContent=tpl.meta?'Padrão: '+fmt(tpl.meta)+' · Altere se quiser personalizar':'Deixe 0 para acompanhamento livre';
   document.getElementById('modal-iniciar').classList.add('open');
 }
 
+function toggleParcelaDesafio(){
+  const tipo=document.getElementById('mi-divida-tipo').value;
+  document.getElementById('mi-divida-parcela-wrap').style.display=tipo==='parcelado'?'block':'none';
+  calcParcelaDesafio();
+}
+
+function calcParcelaDesafio(){
+  const valor=parseFloat(document.getElementById('mi-divida-valor').value)||0;
+  const tipo=document.getElementById('mi-divida-tipo').value;
+  const n=parseInt(document.getElementById('mi-divida-parcelas').value)||0;
+  const preview=document.getElementById('mi-divida-preview');
+  const parcVal=document.getElementById('mi-divida-parcela-val');
+  if(tipo==='parcelado'&&valor>0&&n>1){
+    const parc=Math.round(valor/n*100)/100;
+    parcVal.value=fmt(parc);
+    preview.style.display='block';
+    preview.innerHTML=`💡 <strong>${n}x de ${fmt(parc)}</strong> — total ${fmt(valor)}`;
+  } else if(tipo==='avista'&&valor>0){
+    preview.style.display='block';
+    preview.innerHTML=`💡 Pagamento à vista de <strong>${fmt(valor)}</strong>`;
+  } else {
+    preview.style.display='none';
+  }
+}
+
 function confirmarIniciar(){
   const tid=document.getElementById('mi-tid').value;
   const tpl=DESAFIO_TEMPLATES.find(d=>d.id===tid);if(!tpl)return;
-  const meta=parseFloat(document.getElementById('mi-meta').value)||0;
   const dias=tid==='desafio-52'?52:tid==='centavos'?60:tpl.dias;
-  desafios.push({id:Date.now(),tid,nome:tpl.nome,desc:tpl.desc,meta,dias,inicio:today(),streak:0,concluido:false});
+
+  if(tid==='quitar-divida'){
+    const nome=document.getElementById('mi-divida-nome').value.trim();
+    const valor=parseFloat(document.getElementById('mi-divida-valor').value)||0;
+    const tipo=document.getElementById('mi-divida-tipo').value;
+    const nParcelas=parseInt(document.getElementById('mi-divida-parcelas').value)||1;
+    if(!nome){showToast('Informe o nome da dívida.','error');return;}
+    if(!valor||valor<=0){showToast('Informe o valor da dívida.','error');return;}
+    if(tipo==='parcelado'&&nParcelas<2){showToast('Informe o número de parcelas (mínimo 2).','error');return;}
+    const diasCalc=tipo==='parcelado'?nParcelas*30:dias;
+    desafios.push({
+      id:Date.now(),tid,
+      nome:nome||tpl.nome,
+      desc:tipo==='parcelado'?`${nParcelas}x de ${fmt(Math.round(valor/nParcelas*100)/100)}`:`À vista — ${fmt(valor)}`,
+      meta:valor,dias:diasCalc,inicio:today(),streak:0,concluido:false,
+      pagamentos:{},
+      tipoPagamento:tipo,
+      nParcelas:tipo==='parcelado'?nParcelas:1
+    });
+  } else {
+    const meta=parseFloat(document.getElementById('mi-meta').value)||0;
+    desafios.push({id:Date.now(),tid,nome:tpl.nome,desc:tpl.desc,meta,dias,inicio:today(),streak:0,concluido:false});
+  }
   ss('cfp-des',desafios);agendarSalvar();fecharModal('modal-iniciar');setDTab('ativos');renderDesafios();
   showToast('Desafio iniciado!','success');
 }
@@ -3064,26 +3219,25 @@ function renderPctGrid(d){
 
 function renderQuitarGrid(d){
   const totalDivida=d.meta>0?d.meta:5000;
-  const nMeses=Math.ceil(d.dias/30)||3;
+  const nMeses=d.nParcelas||(d.tipoPagamento==='avista'?1:Math.ceil(d.dias/30))||3;
   const pagMensal=Math.round(totalDivida/nMeses*100)/100;
   if(!d.pagamentos)d.pagamentos={};
   const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+(v||0),0);
   const pct=Math.min(Math.round(totalPago/totalDivida*100),100);
   const restante=Math.max(totalDivida-totalPago,0);
-  const dark=isDark();
 
   const meses=Array.from({length:nMeses},(_,i)=>i+1);
   const cells=meses.map(m=>{
     const pago=d.pagamentos[m]>0;
     const valor=d.pagamentos[m]||pagMensal;
+    const label=nMeses===1?'À vista':`Mês ${m}`;
     return `<div onclick="togglePagamentoDivida(${d.id},${m},${pagMensal})"
-      title="Mês ${m} — ${fmt(valor)}"
-      style="border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
-      border:1.5px solid ${pago?'var(--green)':'var(--border2)'};
+      style="border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;cursor:pointer;border:1.5px solid ${pago?'var(--green)':'var(--border2)'};
       background:${pago?'var(--green-bg)':'var(--surface2)'};
       color:${pago?'var(--green-text)':'var(--text2)'};
       transition:all .2s;user-select:none;min-height:64px;gap:3px;">
-      <span style="font-size:10px;font-weight:600;opacity:.7;">Mês ${m}</span>
+      <span style="font-size:10px;font-weight:600;opacity:.7;">${label}</span>
       <span style="font-size:13px;font-weight:700;">${fmt(valor)}</span>
       ${pago?`<span style="font-size:16px;">✓</span>`:''}
     </div>`;
@@ -3093,7 +3247,7 @@ function renderQuitarGrid(d){
 
   return `<div style="margin-top:14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <span style="font-size:12px;color:var(--text2);">Clique para marcar cada pagamento mensal</span>
+      <span style="font-size:12px;font-weight:600;color:var(--text);">${d.nome}</span>
       <span style="font-size:12px;font-weight:700;color:var(--green);">Pago: ${fmt(Math.round(totalPago*100)/100)}</span>
     </div>
     <div style="margin-bottom:10px;">
@@ -3105,9 +3259,9 @@ function renderQuitarGrid(d){
         <span>Falta: ${fmt(restante)}</span>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;">${cells}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${nMeses===1?'120':'80'}px,1fr));gap:8px;">${cells}</div>
     <div style="margin-top:10px;padding:10px;background:var(--surface2);border-radius:var(--radius);font-size:12px;color:var(--text2);">
-      💡 Dívida total: <strong>${fmt(totalDivida)}</strong> · Parcela sugerida: <strong>${fmt(pagMensal)}/mês</strong> · ${nMeses} meses
+      💡 ${d.tipoPagamento==='avista'?`Pagamento à vista de <strong>${fmt(totalDivida)}</strong>`:`<strong>${nMeses}x de ${fmt(pagMensal)}</strong> — total ${fmt(totalDivida)}`}
     </div>
   </div>`;
 }
@@ -3219,6 +3373,134 @@ function renderDesafios(){
 }
 
 // ── IA ──
+// ── IA Tab switching ──
+function setIATab(tab){
+  ['analise','chat'].forEach(t=>{
+    document.getElementById('iasec-'+t).style.display=t===tab?'block':'none';
+    document.getElementById('iatab-'+t).classList.toggle('active',t===tab);
+  });
+}
+
+// ── Chat IA ──
+let chatHistorico=[];
+
+function usarSugestaoChat(pergunta){
+  document.getElementById('chat-input').value=pergunta;
+  document.getElementById('chat-input').focus();
+}
+
+function limparChatIA(){
+  if(chatHistorico.length&&!confirm('Limpar toda a conversa?'))return;
+  chatHistorico=[];
+  document.getElementById('chat-historico').innerHTML='';
+}
+
+function adicionarMensagemChat(texto,tipo,loading=false){
+  const el=document.getElementById('chat-historico');
+  const id='msg-'+Date.now()+Math.random().toString(36).slice(2);
+  const isUser=tipo==='user';
+  const div=document.createElement('div');
+  div.id=id;
+  div.style.cssText=`display:flex;flex-direction:column;align-items:${isUser?'flex-end':'flex-start'};`;
+  div.innerHTML=`
+    <div style="max-width:85%;background:${isUser?'linear-gradient(135deg,#1e40af,#3b82f6)':'var(--surface2)'};
+      color:${isUser?'#fff':'var(--text)'};padding:12px 16px;
+      border-radius:${isUser?'16px 16px 4px 16px':'16px 16px 16px 4px'};
+      font-size:13px;line-height:1.6;border:${isUser?'none':'1px solid var(--border)'};
+      box-shadow:var(--shadow-sm);">
+      ${loading?`<div style="display:flex;gap:5px;align-items:center;padding:2px 0;">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--text3);animation:bounce .9s infinite;display:inline-block;"></span>
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--text3);animation:bounce .9s .2s infinite;display:inline-block;"></span>
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--text3);animation:bounce .9s .4s infinite;display:inline-block;"></span>
+      </div>`:texto}
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:3px;padding:0 4px;">
+      ${isUser?'Você':'✦ IA'} · ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+    </div>`;
+  el.appendChild(div);
+  el.scrollTop=el.scrollHeight;
+  return id;
+}
+
+function atualizarMensagemChat(id,texto){
+  const div=document.getElementById(id);
+  if(!div)return;
+  const bubble=div.querySelector('div:first-child');
+  if(bubble)bubble.innerHTML=texto
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n\n/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+  document.getElementById('chat-historico').scrollTop=9999;
+}
+
+async function enviarChatIA(){
+  const input=document.getElementById('chat-input');
+  const pergunta=input.value.trim();
+  if(!pergunta)return;
+  const btn=document.getElementById('btn-chat-enviar');
+  btn.disabled=true;input.value='';
+
+  // Esconder sugestões após primeira pergunta
+  if(chatHistorico.length===0){
+    const sug=document.getElementById('chat-sugestoes');
+    if(sug)sug.style.display='none';
+  }
+
+  adicionarMensagemChat(pergunta,'user');
+  chatHistorico.push({role:'user',content:pergunta});
+  const loadingId=adicionarMensagemChat('','ia',true);
+
+  // Contexto financeiro compacto
+  const{start,end}=getPeriodRange('mes');
+  const recAtual=txs.filter(t=>t.data>=start&&t.data<=end&&t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
+  const despAtual=txs.filter(t=>t.data>=start&&t.data<=end&&t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
+  const mediaDesp=getMediaDespesas(3)||0;
+  const guardado=parseFloat(document.getElementById('res-guardado')?.value||0)||0;
+  const despFixas=recorrentes.filter(r=>r.ativo&&r.tipo==='despesa').reduce((a,r)=>a+r.valor,0);
+  const faturasAbertas=faturas.filter(f=>!f.pago).reduce((a,f)=>a+f.valor,0);
+  const porCat={};
+  txs.filter(t=>t.tipo==='despesa').slice(0,200).forEach(t=>{porCat[t.cat]=(porCat[t.cat]||0)+t.valor;});
+  const topCats=Object.entries(porCat).sort((a,b)=>b[1]-a[1]).slice(0,5)
+    .map(([k,v])=>`${k}: ${fmt(Math.round(v/Math.max(getMediaDespesas(3)>0?3:1,1)))}/mês`).join(' · ');
+  const ultimas=txs.slice(0,15).map(t=>`${t.data} ${t.tipo==='receita'?'+':'-'}${fmt(t.valor)} ${t.desc} (${t.cat})`).join('\n');
+
+  const contexto=`Você é o assistente financeiro pessoal do FinanceiroApp. Responda de forma direta, amigável e prática em português brasileiro.
+
+DADOS REAIS DO USUÁRIO:
+- Receita este mês: ${fmt(recAtual)} | Despesa: ${fmt(despAtual)} | Saldo: ${fmt(recAtual-despAtual)}
+- Despesa média/mês (3m): ${fmt(Math.round(mediaDesp))} | Fixas: ${fmt(despFixas)}
+- Reserva de emergência: ${fmt(guardado)} / meta ${fmt(Math.round(mediaDesp*6))} (${mediaDesp>0?Math.round(guardado/mediaDesp/6*100):0}%)
+- Faturas de cartão abertas: ${fmt(faturasAbertas)}
+- Metas ativas: ${metas.filter(m=>m.atual<m.alvo).length} | Desafios: ${desafios.filter(d=>!d.concluido).length} ativos
+- Top gastos: ${topCats}
+
+ÚLTIMAS TRANSAÇÕES:
+${ultimas}
+
+Use esses dados para responder. Seja objetivo e use valores em reais. Máximo 180 palavras.`;
+
+  // Histórico de conversa (últimas 6 trocas)
+  const hist=chatHistorico.slice(-12);
+  const promptFinal=contexto+'\n\nCONVERSA ANTERIOR:\n'+
+    hist.slice(0,-1).map(m=>`${m.role==='user'?'Usuário':'IA'}: ${m.content}`).join('\n')+
+    '\n\nUSUÁRIO: '+pergunta;
+
+  try{
+    const r=await fetch('https://cmelkwjuuvqqsvfrbhqw.supabase.co/functions/v1/analisar-ia',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify({prompt:promptFinal,temperature:0.7})
+    });
+    const data=await r.json();
+    const resposta=(data.content&&data.content[0]&&data.content[0].text)||data.text||'Não consegui processar sua pergunta.';
+    atualizarMensagemChat(loadingId,resposta);
+    chatHistorico.push({role:'assistant',content:resposta});
+  }catch(e){
+    atualizarMensagemChat(loadingId,'❌ Erro de conexão. Verifique sua internet e tente novamente.');
+    console.error(e);
+  }
+  btn.disabled=false;input.focus();
+}
 const ANTHROPIC_KEY='via-edge-function';
 
 function limparAnalise(){
