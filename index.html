@@ -586,12 +586,19 @@ textarea{resize:vertical;min-height:60px;}
 <div id="page-dashboard" class="page active">
   <div class="page-title">Painel</div>
   <div class="page-sub">Visão geral das suas finanças</div>
-  <div class="period-bar">
-    <button class="period-btn active" id="pb-mes" onclick="setPeriod('mes')">Mês</button>
-    <button class="period-btn" id="pb-trimestre" onclick="setPeriod('trimestre')">Trimestre</button>
-    <button class="period-btn" id="pb-ano" onclick="setPeriod('ano')">Ano</button>
-    <button class="period-btn" id="pb-tudo" onclick="setPeriod('tudo')">Tudo</button>
-    <span class="period-label" id="dash-period-label"></span>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+    <div class="period-bar" style="margin-bottom:0;">
+      <button class="period-btn active" id="pb-mes" onclick="setPeriod('mes')">Mês</button>
+      <button class="period-btn" id="pb-trimestre" onclick="setPeriod('trimestre')">Trimestre</button>
+      <button class="period-btn" id="pb-ano" onclick="setPeriod('ano')">Ano</button>
+      <button class="period-btn" id="pb-tudo" onclick="setPeriod('tudo')">Tudo</button>
+    </div>
+    <!-- Navegação de mês -->
+    <div id="mes-nav" style="display:flex;align-items:center;gap:6px;">
+      <button class="btn btn-outline btn-sm" onclick="navegarMes(-1)" title="Mês anterior">←</button>
+      <span id="dash-period-label" style="font-size:12px;color:var(--text2);font-weight:600;min-width:120px;text-align:center;"></span>
+      <button class="btn btn-outline btn-sm" onclick="navegarMes(1)" id="btn-mes-prox" title="Próximo mês">→</button>
+    </div>
   </div>
   <div class="metrics" id="metrics"></div>
   <div id="cartoes-dash"></div>
@@ -1873,8 +1880,11 @@ function getPeriodRange(sel){
   const y=now.getFullYear(),m=now.getMonth();
   if(sel==='mes'||sel===undefined){
     const f=perfil.fechamento||1;
-    const start=new Date(y,m,f);
-    if(now.getDate()<f) start.setMonth(start.getMonth()-1);
+    // Aplicar offset de mês
+    const refDate=new Date(y,m+mesOffset,now.getDate());
+    const ry=refDate.getFullYear(),rm=refDate.getMonth();
+    const start=new Date(ry,rm,f);
+    if(refDate.getDate()<f) start.setMonth(start.getMonth()-1);
     const end=new Date(start);end.setMonth(end.getMonth()+1);end.setDate(end.getDate()-1);
     return{start:start.toISOString().split('T')[0],end:end.toISOString().split('T')[0]};
   }
@@ -1889,7 +1899,12 @@ function filterByPeriod(arr,sel){
 }
 
 function getPeriodLabel(sel){
-  if(sel==='mes'){const{start,end}=getPeriodRange('mes');const fmt2=d=>new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});return fmt2(start)+' → '+fmt2(end);}
+  if(sel==='mes'){
+    const{start,end}=getPeriodRange('mes');
+    const fmt2=d=>new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
+    const label=fmt2(start)+' → '+fmt2(end);
+    return mesOffset<0?label+' ◀':label;
+  }
   if(sel==='trimestre')return 'Trimestre atual';
   if(sel==='ano')return 'Ano '+new Date().getFullYear();
   return 'Todo o período';
@@ -1999,12 +2014,28 @@ function goTo(p){
 
 // ── Period ──
 let activePeriod='mes';
+let mesOffset=0;
+
+function navegarMes(delta){
+  if(activePeriod!=='mes')setPeriod('mes');
+  mesOffset+=delta;
+  if(mesOffset>0)mesOffset=0;
+  const btnProx=document.getElementById('btn-mes-prox');
+  if(btnProx)btnProx.disabled=mesOffset>=0;
+  renderAll();
+}
+
 function setPeriod(p){
   activePeriod=p;
+  if(p!=='mes')mesOffset=0;
   ['mes','trimestre','ano','tudo'].forEach(x=>{
     const el=document.getElementById('pb-'+x);
     if(el)el.classList.toggle('active',x===p);
   });
+  const nav=document.getElementById('mes-nav');
+  if(nav)nav.style.display=p==='mes'?'flex':'none';
+  const btnProx=document.getElementById('btn-mes-prox');
+  if(btnProx)btnProx.disabled=mesOffset>=0;
   renderAll();
 }
 
@@ -2255,12 +2286,51 @@ function renderMetrics(){
   const desp=filtered.filter(t=>t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
   const saldo=rec-desp;
   const taxa=rec>0?((rec-desp)/rec*100).toFixed(1):0;
+
+  // Comparação com mês anterior (só no modo mês)
+  let compHTML='';
+  if(sel==='mes'){
+    const prevOffset=mesOffset-1;
+    const prevRange=getPeriodRangeWithOffset(prevOffset);
+    const prevTxs=txs.filter(t=>t.data>=prevRange.start&&t.data<=prevRange.end);
+    const prevRec=prevTxs.filter(t=>t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
+    const prevDesp=prevTxs.filter(t=>t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
+    const prevSaldo=prevRec-prevDesp;
+    if(prevRec>0||prevDesp>0){
+      const diffSaldo=saldo-prevSaldo;
+      const diffRec=rec-prevRec;
+      const diffDesp=desp-prevDesp;
+      compHTML=`<div style="font-size:10.5px;color:var(--text3);margin-top:3px;">
+        vs mês anterior: saldo <span style="color:${diffSaldo>=0?'var(--green)':'var(--red)'};">${diffSaldo>=0?'+':''}${fmt(diffSaldo)}</span>
+      </div>`;
+    }
+  }
+
   document.getElementById('metrics').innerHTML=`
-    <div class="metric m-saldo"><div class="metric-label">Saldo</div><div class="metric-value ${saldo>=0?'c-green':'c-red'}">${fmt(saldo)}</div><div class="metric-sub">Poupança: ${taxa}%</div></div>
+    <div class="metric m-saldo">
+      <div class="metric-label">Saldo ${mesOffset<0?'do período':''}</div>
+      <div class="metric-value ${saldo>=0?'c-green':'c-red'}">${fmt(saldo)}</div>
+      <div class="metric-sub">Poupança: ${taxa}%</div>
+      ${compHTML}
+    </div>
     <div class="metric m-rec"><div class="metric-label">Receitas</div><div class="metric-value c-green">${fmt(rec)}</div><div class="metric-sub">${filtered.filter(t=>t.tipo==='receita').length} lançamentos</div></div>
     <div class="metric m-desp"><div class="metric-label">Despesas</div><div class="metric-value c-red">${fmt(desp)}</div><div class="metric-sub">${filtered.filter(t=>t.tipo==='despesa').length} lançamentos</div></div>`;
-  document.getElementById('dash-period-label').textContent=getPeriodLabel(sel);
-  document.getElementById('sidebarPeriod').textContent=getPeriodLabel(sel);
+
+  const label=getPeriodLabel(sel);
+  document.getElementById('dash-period-label').textContent=label;
+  const sp=document.getElementById('sidebarPeriod');
+  if(sp)sp.textContent=label;
+}
+
+function getPeriodRangeWithOffset(offset){
+  const now=new Date();
+  const f=perfil.fechamento||1;
+  const refDate=new Date(now.getFullYear(),now.getMonth()+offset,now.getDate());
+  const ry=refDate.getFullYear(),rm=refDate.getMonth();
+  const start=new Date(ry,rm,f);
+  if(refDate.getDate()<f)start.setMonth(start.getMonth()-1);
+  const end=new Date(start);end.setMonth(end.getMonth()+1);end.setDate(end.getDate()-1);
+  return{start:start.toISOString().split('T')[0],end:end.toISOString().split('T')[0]};
 }
 
 // ── Chart ──
