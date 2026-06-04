@@ -1504,6 +1504,7 @@ const DESAFIO_TEMPLATES=[
   {id:'cartao-reduzir',nome:'Reduzir fatura em 30%',desc:'Diminua o valor da próxima fatura em 30% em relação à atual',meta:0,dias:30,icon:'📉'},
   {id:'cartao-guardar',nome:'Guardar valor da fatura',desc:'Separe o valor da fatura antes do vencimento — não entre no vermelho',meta:0,dias:60,icon:'💳'},
   {id:'um-porcento',nome:'Desafio 1% crescente',desc:'Mês 1 guarda 1% do salário, mês 2 guarda 2%... até 12% no mês 12',meta:0,dias:365,icon:'📈'},
+  {id:'quitar-divida',nome:'Quitar uma dívida',desc:'Defina uma dívida, valor total e prazo — registre cada pagamento até quitar',meta:0,dias:90,icon:'🏆'},
 ];
 
 // ── Supabase ──
@@ -2786,7 +2787,16 @@ function renderMetas(){
 
 // ── Desafios ──
 function getTotalConcluidos(){return desafios.filter(d=>d.concluido).length;}
-function getStars(){return{earned:Math.min(Math.floor(getTotalConcluidos()/2),5),total:5};}
+// Thresholds: 1⭐=4, 2⭐=8, 3⭐=12, 4⭐=16, 5⭐=20 (todos os 15 desafios = impossível fácil)
+const STAR_THRESHOLDS=[4,8,12,16,20];
+function getStars(){
+  const tc=getTotalConcluidos();
+  let earned=0;
+  for(let i=0;i<STAR_THRESHOLDS.length;i++){
+    if(tc>=STAR_THRESHOLDS[i])earned=i+1;
+  }
+  return{earned,total:5,tc,nextThreshold:earned<5?STAR_THRESHOLDS[earned]:null};
+}
 
 function mostrarCongratulacao(d){
   const tc=getTotalConcluidos();
@@ -2805,9 +2815,10 @@ function iniciarDesafio(tid){
   document.getElementById('mi-title').textContent=tpl.icon+' '+tpl.nome;
   document.getElementById('mi-desc').textContent=tpl.desc+' · '+tpl.dias+' dias';
   document.getElementById('mi-meta').value=tpl.meta||'';
-  const hasGrid=['desafio-52','desafio-365','centavos','um-porcento'].includes(tid);
+  const hasGrid=['desafio-52','desafio-365','centavos','um-porcento','quitar-divida'].includes(tid);
   document.getElementById('mi-meta-label').textContent=
     tid==='um-porcento'?'Seu salário mensal (R$) — base para o cálculo':
+    tid==='quitar-divida'?'Valor total da dívida (R$)':
     hasGrid?'Meta total (R$) — distribuída proporcionalmente':'Meta financeira (R$)';
   document.getElementById('mi-meta-hint').textContent=tpl.meta?'Padrão: '+fmt(tpl.meta)+' · Altere se quiser personalizar':'Deixe 0 para acompanhamento livre';
   document.getElementById('modal-iniciar').classList.add('open');
@@ -3051,6 +3062,75 @@ function renderPctGrid(d){
   </div>`;
 }
 
+function renderQuitarGrid(d){
+  const totalDivida=d.meta>0?d.meta:5000;
+  const nMeses=Math.ceil(d.dias/30)||3;
+  const pagMensal=Math.round(totalDivida/nMeses*100)/100;
+  if(!d.pagamentos)d.pagamentos={};
+  const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+(v||0),0);
+  const pct=Math.min(Math.round(totalPago/totalDivida*100),100);
+  const restante=Math.max(totalDivida-totalPago,0);
+  const dark=isDark();
+
+  const meses=Array.from({length:nMeses},(_,i)=>i+1);
+  const cells=meses.map(m=>{
+    const pago=d.pagamentos[m]>0;
+    const valor=d.pagamentos[m]||pagMensal;
+    return `<div onclick="togglePagamentoDivida(${d.id},${m},${pagMensal})"
+      title="Mês ${m} — ${fmt(valor)}"
+      style="border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;
+      border:1.5px solid ${pago?'var(--green)':'var(--border2)'};
+      background:${pago?'var(--green-bg)':'var(--surface2)'};
+      color:${pago?'var(--green-text)':'var(--text2)'};
+      transition:all .2s;user-select:none;min-height:64px;gap:3px;">
+      <span style="font-size:10px;font-weight:600;opacity:.7;">Mês ${m}</span>
+      <span style="font-size:13px;font-weight:700;">${fmt(valor)}</span>
+      ${pago?`<span style="font-size:16px;">✓</span>`:''}
+    </div>`;
+  }).join('');
+
+  const corBarra=pct>=100?'var(--green)':pct>=50?'var(--blue)':'var(--amber)';
+
+  return `<div style="margin-top:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:12px;color:var(--text2);">Clique para marcar cada pagamento mensal</span>
+      <span style="font-size:12px;font-weight:700;color:var(--green);">Pago: ${fmt(Math.round(totalPago*100)/100)}</span>
+    </div>
+    <div style="margin-bottom:10px;">
+      <div class="prog-bar" style="height:8px;border-radius:4px;">
+        <div class="prog-fill" style="width:${pct}%;background:${corBarra};border-radius:4px;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:3px;">
+        <span>${pct}% quitado</span>
+        <span>Falta: ${fmt(restante)}</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;">${cells}</div>
+    <div style="margin-top:10px;padding:10px;background:var(--surface2);border-radius:var(--radius);font-size:12px;color:var(--text2);">
+      💡 Dívida total: <strong>${fmt(totalDivida)}</strong> · Parcela sugerida: <strong>${fmt(pagMensal)}/mês</strong> · ${nMeses} meses
+    </div>
+  </div>`;
+}
+
+function togglePagamentoDivida(id,mes,valorPadrao){
+  const d=desafios.find(x=>x.id===id);if(!d||d.concluido)return;
+  if(!d.pagamentos)d.pagamentos={};
+  if(d.pagamentos[mes]){
+    delete d.pagamentos[mes];
+  } else {
+    d.pagamentos[mes]=valorPadrao;
+  }
+  d.streak=Object.keys(d.pagamentos).length;
+  const totalDivida=d.meta>0?d.meta:5000;
+  const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+v,0);
+  if(totalPago>=totalDivida&&!d.concluido){
+    d.concluido=true;
+    ss('cfp-des',desafios);agendarSalvar();
+    renderDesafios();mostrarCongratulacao(d);return;
+  }
+  ss('cfp-des',desafios);agendarSalvar();renderDesafios();
+}
+
 function toggleMesPct(id,mes){
   const d=desafios.find(x=>x.id===id);if(!d||d.concluido)return;
   if(!d.months)d.months={};
@@ -3068,21 +3148,35 @@ function renderDesafios(){
   const tc=getTotalConcluidos();
   const ativos=desafios.filter(d=>!d.concluido).length;
   const streak=desafios.filter(d=>!d.concluido).reduce((a,d)=>a+(d.streak||0),0);
-  const{earned,total}=getStars();
+  const{earned,total,nextThreshold}=getStars();
+  const NIVEIS=['','Iniciante','Bronze','Prata','Ouro','Diamante'];
+  const NIVEL_CORES=['','var(--text3)','#cd7f32','#94a3b8','#fbbf24','#60a5fa'];
+  const nivelAtual=NIVEIS[earned]||'Sem nível';
+  const corNivel=NIVEL_CORES[earned]||'var(--text3)';
   const starsHtml=Array.from({length:total},(_,i)=>`<span style="font-size:22px;color:${i<earned?'#fbbf24':'var(--border2)'};transition:color .3s;">★</span>`).join('');
-  const nextAt=earned<5?((earned+1)*2)-tc:0;
+  const nextInfo=earned<5&&nextThreshold?`<span style="font-size:11px;color:var(--text2);">+${nextThreshold-tc} para <strong>${NIVEIS[earned+1]}</strong></span>`:'';
+  const starBox=`<div style="background:var(--surface);border:1.5px solid ${corNivel}44;border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div>
+        <span style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;">Nível de comprometimento</span>
+        <div style="font-size:16px;font-weight:700;color:${corNivel};margin-top:2px;">${earned>0?nivelAtual:'Sem nível ainda'}</div>
+      </div>
+      ${earned>=5?'<span class="badge b-amber">🏆 Nível máximo!</span>':nextInfo}
+    </div>
+    <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px;">${starsHtml}</div>
+    <div style="font-size:11px;color:var(--text3);">${tc} desafio${tc!==1?'s':''} concluído${tc!==1?'s':''} · Próximos níveis: Iniciante(4) → Bronze(8) → Prata(12) → Ouro(16) → Diamante(20)</div>
+  </div>`;
   document.getElementById('desafio-metrics').innerHTML=`
     <div class="metric m-blue"><div class="metric-label">Ativos</div><div class="metric-value c-blue">${ativos}</div></div>
     <div class="metric m-saldo"><div class="metric-label">Concluídos</div><div class="metric-value c-green">${tc}</div></div>
     <div class="metric m-amber"><div class="metric-label">Check-ins</div><div class="metric-value c-amber">${streak}</div></div>`;
-  const starBox=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;">Nível de comprometimento</span>${earned>=5?'<span class="badge b-amber">Nível máximo!</span>':nextAt>0?`<span style="font-size:11px;color:var(--text2);">+${nextAt} para próxima ⭐</span>`:''}</div><div style="display:flex;gap:4px;align-items:center;">${starsHtml}</div><div style="font-size:11px;color:var(--text3);margin-top:6px;">${tc} desafio${tc!==1?'s':''} concluído${tc!==1?'s':''} · estrela a cada 2</div></div>`;
 
   // Ativos
   const atList=desafios.filter(d=>!d.concluido);
   const el=document.getElementById('desafio-list');
   el.innerHTML=starBox+(atList.length?atList.map(d=>{
-    const isGrid=['desafio-52','desafio-365','centavos','um-porcento'].includes(d.tid);
-    const is52=d.tid==='desafio-52',is365=d.tid==='desafio-365',isCent=d.tid==='centavos',isPct=d.tid==='um-porcento';
+    const isGrid=['desafio-52','desafio-365','centavos','um-porcento','quitar-divida'].includes(d.tid);
+    const is52=d.tid==='desafio-52',is365=d.tid==='desafio-365',isCent=d.tid==='centavos',isPct=d.tid==='um-porcento',isQuitar=d.tid==='quitar-divida';
     const pct=Math.min(Math.round(d.streak/d.dias*100),100);
     const cor=pct>=50?'var(--blue)':'var(--purple)';
     const tpl=DESAFIO_TEMPLATES.find(t=>t.id===d.tid)||{};
@@ -3090,7 +3184,7 @@ function renderDesafios(){
       <div class="row-between" style="margin-bottom:8px;"><div><div class="challenge-name">${tpl.icon||'🔥'} ${d.nome}</div><div class="challenge-desc">${d.desc}</div></div></div>
       <div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${cor};"></div></div>
       <div class="row-between" style="font-size:12px;color:var(--text2);margin-top:4px;"><span>${isGrid?'Etapa':'Dia'} <strong>${d.streak}</strong>/${d.dias}</span><span>${pct}%</span></div>
-      ${is52?render52Grid(d):''}${is365?renderDaysGrid(d):''}${isCent?renderCentGrid(d):''}${isPct?renderPctGrid(d):''}
+      ${is52?render52Grid(d):''}${is365?renderDaysGrid(d):''}${isCent?renderCentGrid(d):''}${isPct?renderPctGrid(d):''}${isQuitar?renderQuitarGrid(d):''}
       ${!isGrid?`<div id="edit-streak-${d.id}" style="display:none;margin-top:10px;padding:10px;background:var(--surface2);border-radius:var(--radius);"><div style="font-size:12px;color:var(--text2);margin-bottom:6px;">Editar progresso</div><div style="display:flex;gap:8px;"><input type="number" id="streak-input-${d.id}" value="${d.streak}" min="0" max="${d.dias}" style="width:90px;"><button class="btn btn-outline btn-sm" onclick="salvarStreak(${d.id})">Salvar</button></div></div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="btn btn-outline" style="flex:1;padding:8px;" onclick="checkIn(${d.id})">✓ Check-in</button>
