@@ -1483,10 +1483,10 @@ textarea{resize:vertical;min-height:60px;}
 <script>
 // ── Constants ──
 const CATS_DEFAULT={
-  receita:['Salário','Freelance','Investimentos','Outros'],
+  receita:['Salário','Freelance','Investimentos','Saldo anterior','Outros'],
   despesa:['Moradia','Alimentação','Transporte','Saúde','Lazer','Educação','Vestuário','Outros']
 };
-const ICONS={Salário:'💼',Freelance:'💻',Investimentos:'📈',Moradia:'🏠','Alimentação':'🍽️',Transporte:'🚗','Saúde':'💊',Lazer:'🎭','Educação':'📚',Vestuário:'👗',Outros:'📦',Padrão:'💰',Pet:'🐾',Assinaturas:'📱',Viagem:'✈️',Presente:'🎁',Academia:'🏋️'};
+const ICONS={Salário:'💼',Freelance:'💻',Investimentos:'📈','Saldo anterior':'💰',Moradia:'🏠','Alimentação':'🍽️',Transporte:'🚗','Saúde':'💊',Lazer:'🎭','Educação':'📚',Vestuário:'👗',Outros:'📦',Padrão:'💰',Pet:'🐾',Assinaturas:'📱',Viagem:'✈️',Presente:'🎁',Academia:'🏋️'};
 const VCOLORS_DARK=['#00e096','#4d9fff','#ff6b6b','#fbbf24','#a78bfa','#f472b6','#34d399','#94a3b8','#fb923c','#e879f9'];
 const VCOLORS_LIGHT=['#00c07a','#1a6ff0','#e0294a','#d97706','#6c5ce7','#e91e8c','#059669','#64748b','#ea580c','#c026d3'];
 const DESAFIO_TEMPLATES=[
@@ -1701,6 +1701,7 @@ async function entrarNaApp(user){
   resetSessionTimer();
   verificarLGPD();
   setTimeout(verificarRecorrentes,2000);
+  setTimeout(verificarTransferenciaSaldo,3000);
   setTimeout(()=>{iniciarGoogleAPI();setTimeout(verificarBackupAutomatico,3000);},1000);
   showToast('Bem-vindo'+(perfil.nome?', '+perfil.nome:'')+'! 👋','success');
 }
@@ -4293,6 +4294,102 @@ function renderCartoesDash(){
     </div>
     ${alertas.length?`<div style="font-size:11.5px;color:var(--red);margin-top:6px;font-weight:600;">⚠️ ${alertas.map(c=>c.nome).join(', ')} acima de 80% do limite</div>`:''}
   </div>`;
+}
+
+// ── Transferência automática de saldo entre meses ──
+function getSaldoMes(offset){
+  const{start,end}=getPeriodRangeWithOffset(offset);
+  const filtered=txs.filter(t=>t.data>=start&&t.data<=end&&!t.saldoTransferido);
+  const rec=filtered.filter(t=>t.tipo==='receita').reduce((a,t)=>a+t.valor,0);
+  const desp=filtered.filter(t=>t.tipo==='despesa').reduce((a,t)=>a+t.valor,0);
+  return{rec,desp,saldo:Math.round((rec-desp)*100)/100,start,end};
+}
+
+function verificarTransferenciaSaldo(){
+  // Verificar se já foi transferido este mês
+  const mesAtual=getPeriodRangeWithOffset(0);
+  const chaveTransf=`cfp-transf-${mesAtual.start}`;
+  if(ls(chaveTransf,false))return; // já transferiu este mês
+
+  // Calcular saldo do mês anterior
+  const anterior=getSaldoMes(-1);
+  if(anterior.saldo<=0)return; // sem saldo positivo para transferir
+
+  // Verificar se já existe lançamento de transferência no mês atual
+  const jaTemTransf=txs.some(t=>t.saldoTransferido&&t.data>=mesAtual.start&&t.data<=mesAtual.end);
+  if(jaTemTransf)return;
+
+  // Mostrar notificação com opção de transferir
+  mostrarNotificacaoSaldo(anterior.saldo,mesAtual.start);
+}
+
+function mostrarNotificacaoSaldo(valor,dataInicio){
+  // Criar toast especial com botão
+  const toast=document.createElement('div');
+  toast.id='toast-saldo-transf';
+  toast.style.cssText=`
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);
+    background:var(--surface);border:1.5px solid var(--green);border-radius:16px;
+    padding:16px 20px;font-size:13px;font-weight:500;box-shadow:var(--shadow-lg);
+    z-index:9998;display:flex;flex-direction:column;gap:10px;
+    transition:transform .4s cubic-bezier(.34,1.56,.64,1);max-width:360px;width:90%;
+  `;
+  toast.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:20px;">💰</span>
+      <div>
+        <div style="font-weight:700;color:var(--text);">Saldo do mês anterior</div>
+        <div style="font-size:12px;color:var(--text2);">Sobrou <strong style="color:var(--green);">${fmt(valor)}</strong> no mês passado</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);">Deseja transferir para o mês atual como saldo inicial?</div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="confirmarTransferenciaSaldo(${valor},'${dataInicio}')"
+        style="flex:1;padding:8px;background:linear-gradient(135deg,#0a9f6e,#10b981);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+        ✅ Sim, transferir
+      </button>
+      <button onclick="recusarTransferenciaSaldo('${dataInicio}')"
+        style="padding:8px 14px;background:none;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);">
+        Não
+      </button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+  setTimeout(()=>toast.style.transform='translateX(-50%) translateY(0)',100);
+}
+
+function confirmarTransferenciaSaldo(valor,dataInicio){
+  // Lançar como receita no início do período atual
+  const tx={
+    id:Date.now(),
+    tipo:'receita',
+    desc:'💰 Saldo transferido do mês anterior',
+    valor:Math.abs(valor),
+    cat:'Saldo anterior',
+    data:dataInicio,
+    pagamento:null,
+    saldoTransferido:true
+  };
+  txs.unshift(tx);
+  ss('cfp-txs',txs);
+  ss(`cfp-transf-${dataInicio}`,true);
+  agendarSalvar();
+  renderAll();
+  fecharNotificacaoSaldo();
+  showToast(`✅ R$ ${fmt(valor)} transferidos para o mês atual!`,'success');
+}
+
+function recusarTransferenciaSaldo(dataInicio){
+  ss(`cfp-transf-${dataInicio}`,true); // marcar como visto para não perguntar de novo
+  fecharNotificacaoSaldo();
+}
+
+function fecharNotificacaoSaldo(){
+  const toast=document.getElementById('toast-saldo-transf');
+  if(toast){
+    toast.style.transform='translateX(-50%) translateY(200px)';
+    setTimeout(()=>toast.remove(),400);
+  }
 }
 
 // ── Lançamentos Recorrentes ──
