@@ -1481,8 +1481,18 @@ textarea{resize:vertical;min-height:60px;}
       <div id="mi-divida-parcela-wrap" style="display:none;">
         <div class="form-row">
           <div class="form-group">
-            <label>Número de parcelas</label>
-            <input type="number" id="mi-divida-parcelas" min="2" max="120" placeholder="Ex: 12" oninput="calcParcelaDesafio()">
+            <label>Valor de entrada (R$) <span style="font-size:10px;color:var(--text3);">opcional</span></label>
+            <input type="number" id="mi-divida-entrada" min="0" step="10" placeholder="0,00" oninput="calcParcelaDesafio()">
+          </div>
+          <div class="form-group">
+            <label>Nº de parcelas</label>
+            <input type="number" id="mi-divida-parcelas" min="1" max="120" placeholder="Ex: 12" oninput="calcParcelaDesafio()">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Parcelas já pagas <span style="font-size:10px;color:var(--text3);">opcional</span></label>
+            <input type="number" id="mi-divida-pagas" min="0" placeholder="0" oninput="calcParcelaDesafio()">
           </div>
           <div class="form-group">
             <label>Valor por parcela</label>
@@ -1490,7 +1500,7 @@ textarea{resize:vertical;min-height:60px;}
           </div>
         </div>
       </div>
-      <div id="mi-divida-preview" style="font-size:12px;color:var(--text2);margin-top:6px;padding:8px 12px;background:var(--surface2);border-radius:var(--radius);display:none;"></div>
+      <div id="mi-divida-preview" style="font-size:12px;color:var(--text2);margin-top:6px;padding:10px 12px;background:var(--surface2);border-radius:var(--radius);display:none;line-height:1.7;"></div>
     </div>
 
     <div class="modal-actions">
@@ -2921,6 +2931,8 @@ function iniciarDesafio(tid){
     document.getElementById('mi-divida-valor').value='';
     document.getElementById('mi-divida-tipo').value='avista';
     document.getElementById('mi-divida-parcelas').value='';
+    document.getElementById('mi-divida-entrada').value='';
+    document.getElementById('mi-divida-pagas').value='';
     document.getElementById('mi-divida-parcela-val').value='';
     document.getElementById('mi-divida-parcela-wrap').style.display='none';
     document.getElementById('mi-divida-preview').style.display='none';
@@ -2943,18 +2955,33 @@ function calcParcelaDesafio(){
   const valor=parseFloat(document.getElementById('mi-divida-valor').value)||0;
   const tipo=document.getElementById('mi-divida-tipo').value;
   const n=parseInt(document.getElementById('mi-divida-parcelas').value)||0;
+  const entrada=parseFloat(document.getElementById('mi-divida-entrada')?.value)||0;
+  const pagas=parseInt(document.getElementById('mi-divida-pagas')?.value)||0;
   const preview=document.getElementById('mi-divida-preview');
   const parcVal=document.getElementById('mi-divida-parcela-val');
-  if(tipo==='parcelado'&&valor>0&&n>1){
-    const parc=Math.round(valor/n*100)/100;
-    parcVal.value=fmt(parc);
+
+  if(tipo==='parcelado'&&valor>0&&n>0){
+    const saldoAposEntrada=Math.max(valor-entrada,0);
+    const parc=Math.round(saldoAposEntrada/n*100)/100;
+    const parcRestantes=Math.max(n-pagas,0);
+    const valorRestante=Math.round(parcRestantes*parc*100)/100;
+    if(parcVal)parcVal.value=fmt(parc);
     preview.style.display='block';
-    preview.innerHTML=`💡 <strong>${n}x de ${fmt(parc)}</strong> — total ${fmt(valor)}`;
+    let html=`<strong>${n}x de ${fmt(parc)}</strong>`;
+    if(entrada>0)html=`Entrada: <strong>${fmt(entrada)}</strong> + ${html}`;
+    if(pagas>0)html+=`<br>✅ ${pagas} parcela${pagas>1?'s':''} já paga${pagas>1?'s':''} — faltam <strong>${parcRestantes} parcela${parcRestantes!==1?'s':''}</strong> (${fmt(valorRestante)})`;
+    if(entrada>0||pagas>0){
+      const totalRestante=entrada>0?valorRestante:valorRestante;
+      html+=`<br>💰 Valor já pago: <strong>${fmt(Math.round((entrada+pagas*parc)*100)/100)}</strong> de ${fmt(valor)}`;
+    }
+    preview.innerHTML='💡 '+html;
   } else if(tipo==='avista'&&valor>0){
     preview.style.display='block';
     preview.innerHTML=`💡 Pagamento à vista de <strong>${fmt(valor)}</strong>`;
+    if(parcVal)parcVal.value='';
   } else {
     preview.style.display='none';
+    if(parcVal)parcVal.value='';
   }
 }
 
@@ -2968,18 +2995,36 @@ function confirmarIniciar(){
     const valor=parseFloat(document.getElementById('mi-divida-valor').value)||0;
     const tipo=document.getElementById('mi-divida-tipo').value;
     const nParcelas=parseInt(document.getElementById('mi-divida-parcelas').value)||1;
+    const entrada=parseFloat(document.getElementById('mi-divida-entrada').value)||0;
+    const pagas=parseInt(document.getElementById('mi-divida-pagas').value)||0;
     if(!nome){showToast('Informe o nome da dívida.','error');return;}
     if(!valor||valor<=0){showToast('Informe o valor da dívida.','error');return;}
-    if(tipo==='parcelado'&&nParcelas<2){showToast('Informe o número de parcelas (mínimo 2).','error');return;}
+    if(tipo==='parcelado'&&nParcelas<1){showToast('Informe o número de parcelas.','error');return;}
+
+    const saldoAposEntrada=Math.max(valor-entrada,0);
+    const valorParcela=tipo==='parcelado'?Math.round(saldoAposEntrada/nParcelas*100)/100:valor;
     const diasCalc=tipo==='parcelado'?nParcelas*30:dias;
+
+    // Pré-marcar parcelas já pagas
+    const pagamentos={};
+    if(tipo==='parcelado'&&pagas>0){
+      for(let i=1;i<=Math.min(pagas,nParcelas);i++) pagamentos[i]=valorParcela;
+    }
+    // Marcar entrada se houver
+    if(entrada>0) pagamentos['entrada']=entrada;
+
     desafios.push({
       id:Date.now(),tid,
-      nome:nome||tpl.nome,
-      desc:tipo==='parcelado'?`${nParcelas}x de ${fmt(Math.round(valor/nParcelas*100)/100)}`:`À vista — ${fmt(valor)}`,
-      meta:valor,dias:diasCalc,inicio:today(),streak:0,concluido:false,
-      pagamentos:{},
-      tipoPagamento:tipo,
-      nParcelas:tipo==='parcelado'?nParcelas:1
+      nome:nome,
+      desc:tipo==='parcelado'
+        ?`${nParcelas}x de ${fmt(valorParcela)}${entrada>0?' (entrada: '+fmt(entrada)+')':''}`
+        :`À vista — ${fmt(valor)}`,
+      meta:valor,
+      valorEntrada:entrada,
+      valorParcela,
+      nParcelas:tipo==='parcelado'?nParcelas:1,
+      dias:diasCalc,inicio:today(),streak:Object.keys(pagamentos).length,
+      concluido:false,pagamentos,tipoPagamento:tipo
     });
   } else {
     const meta=parseFloat(document.getElementById('mi-meta').value)||0;
@@ -3220,69 +3265,86 @@ function renderPctGrid(d){
 function renderQuitarGrid(d){
   const totalDivida=d.meta>0?d.meta:5000;
   const nMeses=d.nParcelas||(d.tipoPagamento==='avista'?1:Math.ceil(d.dias/30))||3;
-  const pagMensal=Math.round(totalDivida/nMeses*100)/100;
+  const entrada=d.valorEntrada||0;
+  const pagMensal=d.valorParcela||Math.round(Math.max(totalDivida-entrada,0)/nMeses*100)/100;
   if(!d.pagamentos)d.pagamentos={};
-  const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+(v||0),0);
+  const totalPago=Object.entries(d.pagamentos).reduce((a,[k,v])=>a+(v||0),0);
   const pct=Math.min(Math.round(totalPago/totalDivida*100),100);
   const restante=Math.max(totalDivida-totalPago,0);
-
-  const meses=Array.from({length:nMeses},(_,i)=>i+1);
-  const cells=meses.map(m=>{
+  const corBarra=pct>=100?'var(--green)':pct>=50?'var(--blue)':'var(--amber)';
+  const parcelasMarc=Object.keys(d.pagamentos).filter(k=>k!=='entrada').length;
+  const cardEntrada=entrada>0?`
+    <div onclick="togglePagamentoEntrada(${d.id})"
+      style="border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;cursor:pointer;border:1.5px solid ${d.pagamentos['entrada']?'var(--green)':'var(--amber)'};
+      background:${d.pagamentos['entrada']?'var(--green-bg)':'var(--surface2)'};
+      transition:all .2s;user-select:none;min-height:64px;gap:3px;">
+      <span style="font-size:10px;font-weight:700;color:var(--amber);">ENTRADA</span>
+      <span style="font-size:13px;font-weight:700;">${fmt(entrada)}</span>
+      ${d.pagamentos['entrada']?'<span style="font-size:16px;">✓</span>':''}
+    </div>`:'';
+  const cells=Array.from({length:nMeses},(_,i)=>i+1).map(m=>{
     const pago=d.pagamentos[m]>0;
-    const valor=d.pagamentos[m]||pagMensal;
-    const label=nMeses===1?'À vista':`Mês ${m}`;
+    const label=nMeses===1?'Pagamento':`Parcela ${m}/${nMeses}`;
     return `<div onclick="togglePagamentoDivida(${d.id},${m},${pagMensal})"
       style="border-radius:10px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;
       justify-content:center;cursor:pointer;border:1.5px solid ${pago?'var(--green)':'var(--border2)'};
       background:${pago?'var(--green-bg)':'var(--surface2)'};
-      color:${pago?'var(--green-text)':'var(--text2)'};
       transition:all .2s;user-select:none;min-height:64px;gap:3px;">
       <span style="font-size:10px;font-weight:600;opacity:.7;">${label}</span>
-      <span style="font-size:13px;font-weight:700;">${fmt(valor)}</span>
-      ${pago?`<span style="font-size:16px;">✓</span>`:''}
+      <span style="font-size:13px;font-weight:700;">${fmt(pagMensal)}</span>
+      ${pago?'<span style="font-size:16px;">✓</span>':''}
     </div>`;
   }).join('');
-
-  const corBarra=pct>=100?'var(--green)':pct>=50?'var(--blue)':'var(--amber)';
-
   return `<div style="margin-top:14px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <span style="font-size:12px;font-weight:600;color:var(--text);">${d.nome}</span>
+      <span style="font-size:12.5px;font-weight:600;color:var(--text);">🏆 ${d.nome}</span>
       <span style="font-size:12px;font-weight:700;color:var(--green);">Pago: ${fmt(Math.round(totalPago*100)/100)}</span>
     </div>
     <div style="margin-bottom:10px;">
       <div class="prog-bar" style="height:8px;border-radius:4px;">
-        <div class="prog-fill" style="width:${pct}%;background:${corBarra};border-radius:4px;"></div>
+        <div class="prog-fill" style="width:${pct}%;background:${corBarra};border-radius:4px;transition:width .4s;"></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:3px;">
-        <span>${pct}% quitado</span>
+        <span>${pct}% quitado · ${parcelasMarc}/${nMeses} parcelas</span>
         <span>Falta: ${fmt(restante)}</span>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${nMeses===1?'120':'80'}px,1fr));gap:8px;">${cells}</div>
-    <div style="margin-top:10px;padding:10px;background:var(--surface2);border-radius:var(--radius);font-size:12px;color:var(--text2);">
-      💡 ${d.tipoPagamento==='avista'?`Pagamento à vista de <strong>${fmt(totalDivida)}</strong>`:`<strong>${nMeses}x de ${fmt(pagMensal)}</strong> — total ${fmt(totalDivida)}`}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;">
+      ${cardEntrada}${cells}
+    </div>
+    <div style="margin-top:10px;padding:10px;background:var(--surface2);border-radius:var(--radius);font-size:12px;color:var(--text2);line-height:1.7;">
+      ${entrada>0?`Entrada: <strong>${fmt(entrada)}</strong> + `:''}${d.tipoPagamento==='parcelado'?`<strong>${nMeses}x de ${fmt(pagMensal)}</strong>`:''}${d.tipoPagamento==='avista'?`À vista: <strong>${fmt(totalDivida)}</strong>`:''} — Total: <strong>${fmt(totalDivida)}</strong>
     </div>
   </div>`;
 }
 
-function togglePagamentoDivida(id,mes,valorPadrao){
+function togglePagamentoEntrada(id){
   const d=desafios.find(x=>x.id===id);if(!d||d.concluido)return;
   if(!d.pagamentos)d.pagamentos={};
-  if(d.pagamentos[mes]){
-    delete d.pagamentos[mes];
-  } else {
-    d.pagamentos[mes]=valorPadrao;
-  }
+  if(d.pagamentos['entrada']) delete d.pagamentos['entrada'];
+  else d.pagamentos['entrada']=d.valorEntrada||0;
   d.streak=Object.keys(d.pagamentos).length;
-  const totalDivida=d.meta>0?d.meta:5000;
-  const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+v,0);
-  if(totalPago>=totalDivida&&!d.concluido){
+  verificarQuitarConcluido(d);
+}
+
+function verificarQuitarConcluido(d){
+  const totalPago=Object.values(d.pagamentos).reduce((a,v)=>a+(v||0),0);
+  if(totalPago>=d.meta&&!d.concluido){
     d.concluido=true;
     ss('cfp-des',desafios);agendarSalvar();
     renderDesafios();mostrarCongratulacao(d);return;
   }
   ss('cfp-des',desafios);agendarSalvar();renderDesafios();
+}
+
+function togglePagamentoDivida(id,mes,valorPadrao){
+  const d=desafios.find(x=>x.id===id);if(!d||d.concluido)return;
+  if(!d.pagamentos)d.pagamentos={};
+  if(d.pagamentos[mes]) delete d.pagamentos[mes];
+  else d.pagamentos[mes]=valorPadrao;
+  d.streak=Object.keys(d.pagamentos).length;
+  verificarQuitarConcluido(d);
 }
 
 function toggleMesPct(id,mes){
